@@ -1,0 +1,49 @@
+-- RatikDB example schema.
+-- Apply with:  ratik start --apply schema.rql   (or: ratik run schema.rql)
+-- Everything here is idempotent, so it is safe to apply on every start.
+
+-- ── Types ───────────────────────────────────────────────────────────────
+-- Every node and edge type must be declared before it can be used.
+
+CREATE NODE IF NOT EXISTS Person (
+  name      STRING NOT NULL UNIQUE,
+  born      INT INDEX,
+  bio       STRING SEARCHABLE,       -- BM25 full-text index
+  embedding VECTOR(4),               -- HNSW vector index (cosine)
+  joined    TIMESTAMP DEFAULT now()
+);
+
+CREATE NODE IF NOT EXISTS Paper (
+  title  STRING NOT NULL,
+  year   INT INDEX,
+  tags   STRING[]
+);
+
+CREATE EDGE IF NOT EXISTS KNOWS FROM Person TO Person (since INT);
+CREATE EDGE IF NOT EXISTS WROTE FROM Person TO Paper;
+CREATE EDGE IF NOT EXISTS CITES FROM Paper TO Paper;
+
+-- ── Stored queries ──────────────────────────────────────────────────────
+-- Callable as CALL name(...) or POST /v1/call/name {"params": {...}}.
+
+CREATE OR REPLACE QUERY friends_of($name STRING) AS
+  SELECT f.name, k.since
+  FROM (p:Person)-[k:KNOWS]->(f)
+  WHERE p.name = $name
+  ORDER BY k.since;
+
+CREATE OR REPLACE QUERY similar_people($vec VECTOR(4), $k INT) AS
+  SELECT name, similarity(embedding, $vec) AS score
+  FROM Person
+  ORDER BY similarity(embedding, $vec) DESC
+  LIMIT $k;
+
+-- ── Sample data (skipped if Ada already exists) ─────────────────────────
+-- Uncomment to seed:
+--
+-- INSERT INTO Person (name, born, bio, embedding) VALUES
+--   ('Ada Lovelace', 1815, 'poetical science and the analytical engine', [0.9, 0.1, 0.0, 0.2]),
+--   ('Charles Babbage', 1791, 'inventor of the analytical engine', [0.8, 0.2, 0.1, 0.1]),
+--   ('Alan Turing', 1912, 'computable numbers and machine intelligence', [0.1, 0.9, 0.3, 0.0]);
+-- INSERT (a)-[:KNOWS {since: 1833}]->(b) FROM Person a, Person b
+--   WHERE a.name = 'Ada Lovelace' AND b.name = 'Charles Babbage';
