@@ -1,0 +1,39 @@
+[package]
+name = "db-visualizer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Ratik Atlas: a GPUI desktop graph explorer for RatikDB"
+default-run = "ratik-atlas"
+
+[[bin]]
+name = "ratik-atlas"
+path = "src/main.rs"
+
+[dependencies]
+# The Metal shader toolchain is not required: shaders are compiled at runtime.
+gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "runtime_shaders"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ureq = { version = "3", default-features = false, features = ["json"] }
+thiserror = "2"
+unicode-segmentation = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2

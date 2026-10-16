@@ -1,6 +1,9 @@
 [workspace]
 members = ["crates/ratikdb", "crates/ratik-sdk", "crates/ratik-cli"]
 resolver = "3"
+# The desktop visualizer builds GPUI, so it stays out of the engine's workspace
+# build and CI; build it from its own directory.
+exclude = ["db-visualizer"]
 
 [workspace.package]
 version = "0.1.0"
