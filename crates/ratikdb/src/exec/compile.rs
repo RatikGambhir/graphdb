@@ -183,8 +183,15 @@ pub(crate) enum CExpr {
     Var(usize),
     /// Property of a node/edge variable; `slots` maps each possible type to
     /// the property's storage slot.
-    Prop { var: usize, name: String, slots: Vec<(TypeId, usize)> },
-    Meta { var: usize, meta: Meta },
+    Prop {
+        var: usize,
+        name: String,
+        slots: Vec<(TypeId, usize)>,
+    },
+    Meta {
+        var: usize,
+        meta: Meta,
+    },
     /// Dynamic `.field` access on a computed value (maps, nodes from lists).
     Field(Box<CExpr>, String),
     Index(Box<CExpr>, Box<CExpr>),
@@ -193,15 +200,29 @@ pub(crate) enum CExpr {
     Bin(BinOp, Box<CExpr>, Box<CExpr>),
     Call(Func, Vec<CExpr>),
     /// BM25 score (or a boolean match) of a SEARCHABLE property.
-    Text { var: usize, prop: String, terms: Vec<String>, matches: bool },
+    Text {
+        var: usize,
+        prop: String,
+        terms: Vec<String>,
+        matches: bool,
+    },
     Agg(usize),
     Col(usize),
     List(Vec<CExpr>),
     Map(Vec<(String, CExpr)>),
-    Case { operand: Option<Box<CExpr>>, whens: Vec<(CExpr, CExpr)>, else_: Option<Box<CExpr>> },
+    Case {
+        operand: Option<Box<CExpr>>,
+        whens: Vec<(CExpr, CExpr)>,
+        else_: Option<Box<CExpr>>,
+    },
     IsNull(Box<CExpr>, bool),
     In(Box<CExpr>, Box<CExpr>, bool),
-    Like { expr: Box<CExpr>, pattern: Box<CExpr>, ci: bool, negated: bool },
+    Like {
+        expr: Box<CExpr>,
+        pattern: Box<CExpr>,
+        ci: bool,
+        negated: bool,
+    },
     Between(Box<CExpr>, Box<CExpr>, Box<CExpr>, bool),
 }
 
@@ -209,7 +230,10 @@ impl CExpr {
     /// Every variable the expression reads.
     pub(crate) fn vars(&self, out: &mut Vec<usize>) {
         match self {
-            Self::Var(v) | Self::Prop { var: v, .. } | Self::Meta { var: v, .. } | Self::Text { var: v, .. } => {
+            Self::Var(v)
+            | Self::Prop { var: v, .. }
+            | Self::Meta { var: v, .. }
+            | Self::Text { var: v, .. } => {
                 if !out.contains(v) {
                     out.push(*v);
                 }
@@ -231,7 +255,11 @@ impl CExpr {
             }
             Self::Call(_, args) | Self::List(args) => args.iter().for_each(|a| a.vars(out)),
             Self::Map(items) => items.iter().for_each(|(_, a)| a.vars(out)),
-            Self::Case { operand, whens, else_ } => {
+            Self::Case {
+                operand,
+                whens,
+                else_,
+            } => {
                 if let Some(o) = operand {
                     o.vars(out);
                 }
@@ -262,15 +290,25 @@ impl CExpr {
             | Self::Meta { .. }
             | Self::Text { .. }
             | Self::Call(Func::Now, _) => false,
-            Self::Field(e, _) | Self::Not(e) | Self::Neg(e) | Self::IsNull(e, _) => e.has_row_refs(),
-            Self::Index(a, b) | Self::Bin(_, a, b) | Self::In(a, b, _) => a.has_row_refs() || b.has_row_refs(),
+            Self::Field(e, _) | Self::Not(e) | Self::Neg(e) | Self::IsNull(e, _) => {
+                e.has_row_refs()
+            }
+            Self::Index(a, b) | Self::Bin(_, a, b) | Self::In(a, b, _) => {
+                a.has_row_refs() || b.has_row_refs()
+            }
             Self::Like { expr, pattern, .. } => expr.has_row_refs() || pattern.has_row_refs(),
             Self::Between(a, b, c, _) => a.has_row_refs() || b.has_row_refs() || c.has_row_refs(),
             Self::Call(_, args) | Self::List(args) => args.iter().any(Self::has_row_refs),
             Self::Map(items) => items.iter().any(|(_, a)| a.has_row_refs()),
-            Self::Case { operand, whens, else_ } => {
+            Self::Case {
+                operand,
+                whens,
+                else_,
+            } => {
                 operand.as_ref().is_some_and(|o| o.has_row_refs())
-                    || whens.iter().any(|(w, t)| w.has_row_refs() || t.has_row_refs())
+                    || whens
+                        .iter()
+                        .any(|(w, t)| w.has_row_refs() || t.has_row_refs())
                     || else_.as_ref().is_some_and(|e| e.has_row_refs())
             }
         }
@@ -301,7 +339,13 @@ pub(crate) struct Compiler<'a> {
 
 impl<'a> Compiler<'a> {
     pub(crate) fn new(g: &'a Graph, params: &'a Params, scope: &'a Scope) -> Self {
-        Self { g, params, scope, aliases: &[], aggs: None }
+        Self {
+            g,
+            params,
+            scope,
+            aliases: &[],
+            aggs: None,
+        }
     }
 
     fn types_of(&self, var: usize) -> (Kind, &[TypeId]) {
@@ -323,25 +367,43 @@ impl<'a> Compiler<'a> {
         }
         if let Some(meta) = Meta::parse(name) {
             if matches!(meta, Meta::From | Meta::To) && matches!(v.kind, VarKind::Node(_)) {
-                return Err(Error::schema(format!("{name} only exists on edges, and '{}' is a node", v.name)));
+                return Err(Error::schema(format!(
+                    "{name} only exists on edges, and '{}' is a node",
+                    v.name
+                )));
             }
             return Ok(CExpr::Meta { var, meta });
         }
         let (_, types) = self.types_of(var);
         let slots: Vec<(TypeId, usize)> = types
             .iter()
-            .filter_map(|t| self.g.schema.get(*t).and_then(|d| d.slot(name).map(|s| (*t, s))))
+            .filter_map(|t| {
+                self.g
+                    .schema
+                    .get(*t)
+                    .and_then(|d| d.slot(name).map(|s| (*t, s)))
+            })
             .collect();
         if slots.is_empty() {
             let defs: Vec<_> = types.iter().filter_map(|t| self.g.schema.get(*t)).collect();
-            let names: Vec<&str> = defs.iter().flat_map(|d| d.props.iter().map(|p| p.name.as_str())).collect();
+            let names: Vec<&str> = defs
+                .iter()
+                .flat_map(|d| d.props.iter().map(|p| p.name.as_str()))
+                .collect();
             let owner = match defs.as_slice() {
                 [one] => one.name.clone(),
                 _ => format!("'{}'", v.name),
             };
-            return Err(Error::schema(format!("{owner} has no property '{name}'{}", hint(name, names))));
+            return Err(Error::schema(format!(
+                "{owner} has no property '{name}'{}",
+                hint(name, names)
+            )));
         }
-        Ok(CExpr::Prop { var, name: name.to_owned(), slots })
+        Ok(CExpr::Prop {
+            var,
+            name: name.to_owned(),
+            slots,
+        })
     }
 
     /// Resolves a bare name: alias → variable → property of the one variable
@@ -362,13 +424,19 @@ impl<'a> Compiler<'a> {
                     return true;
                 }
                 let (_, types) = self.types_of(v);
-                types.iter().any(|t| self.g.schema.get(*t).is_some_and(|d| d.slot(name).is_some()))
+                types.iter().any(|t| {
+                    self.g
+                        .schema
+                        .get(*t)
+                        .is_some_and(|d| d.slot(name).is_some())
+                })
             })
             .collect();
         match owners.as_slice() {
             [v] => self.prop(*v, name),
             [] => {
-                let mut names: Vec<&str> = self.scope.named().map(|(_, v)| v.name.as_str()).collect();
+                let mut names: Vec<&str> =
+                    self.scope.named().map(|(_, v)| v.name.as_str()).collect();
                 names.extend(self.aliases.iter().map(String::as_str));
                 for v in 0..self.scope.vars.len() {
                     let (_, types) = self.types_of(v);
@@ -378,12 +446,20 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
-                Err(Error::schema(format!("unknown column or variable '{name}'{}", hint(name, names))))
+                Err(Error::schema(format!(
+                    "unknown column or variable '{name}'{}",
+                    hint(name, names)
+                )))
             }
             many => {
-                let vars: Vec<String> =
-                    many.iter().map(|v| format!("{}.{name}", self.scope.vars[*v].name)).collect();
-                Err(Error::query(format!("'{name}' is ambiguous — write one of: {}", vars.join(", "))))
+                let vars: Vec<String> = many
+                    .iter()
+                    .map(|v| format!("{}.{name}", self.scope.vars[*v].name))
+                    .collect();
+                Err(Error::query(format!(
+                    "'{name}' is ambiguous — write one of: {}",
+                    vars.join(", ")
+                )))
             }
         }
     }
@@ -404,35 +480,79 @@ impl<'a> Compiler<'a> {
                     self.prop(var, name)?
                 }
                 Expr::Ident(v) if !self.aliases.contains(v) => {
-                    let mut names: Vec<&str> = self.scope.named().map(|(_, v)| v.name.as_str()).collect();
+                    let mut names: Vec<&str> =
+                        self.scope.named().map(|(_, v)| v.name.as_str()).collect();
                     names.extend(self.aliases.iter().map(String::as_str));
-                    return Err(Error::query(format!("unknown variable '{v}'{}", hint(v, names))));
+                    return Err(Error::query(format!(
+                        "unknown variable '{v}'{}",
+                        hint(v, names)
+                    )));
                 }
                 other => CExpr::Field(Box::new(self.compile(other)?), name.clone()),
             },
-            Expr::Index(a, b) => CExpr::Index(Box::new(self.compile(a)?), Box::new(self.compile(b)?)),
+            Expr::Index(a, b) => {
+                CExpr::Index(Box::new(self.compile(a)?), Box::new(self.compile(b)?))
+            }
             Expr::Unary(UnOp::Not, a) => CExpr::Not(Box::new(self.compile(a)?)),
             Expr::Unary(UnOp::Neg, a) => CExpr::Neg(Box::new(self.compile(a)?)),
-            Expr::Binary(op, a, b) => CExpr::Bin(*op, Box::new(self.compile(a)?), Box::new(self.compile(b)?)),
+            Expr::Binary(op, a, b) => {
+                CExpr::Bin(*op, Box::new(self.compile(a)?), Box::new(self.compile(b)?))
+            }
             Expr::List(items) => {
-                let items: Vec<CExpr> = items.iter().map(|i| self.compile(i)).collect::<Result<_>>()?;
+                let items: Vec<CExpr> = items
+                    .iter()
+                    .map(|i| self.compile(i))
+                    .collect::<Result<_>>()?;
                 // Fold constant lists (e.g. vector literals) so the planner can use them.
-                match items.iter().map(|i| if let CExpr::Const(v) = i { Some(v.clone()) } else { None }).collect() {
+                match items
+                    .iter()
+                    .map(|i| {
+                        if let CExpr::Const(v) = i {
+                            Some(v.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+                {
                     Some(values) => CExpr::Const(Value::List(values)),
                     None => CExpr::List(items),
                 }
             }
             Expr::Map(items) => CExpr::Map(
-                items.iter().map(|(k, v)| Ok((k.clone(), self.compile(v)?))).collect::<Result<_>>()?,
+                items
+                    .iter()
+                    .map(|(k, v)| Ok((k.clone(), self.compile(v)?)))
+                    .collect::<Result<_>>()?,
             ),
-            Expr::Case { operand, whens, else_ } => CExpr::Case {
-                operand: operand.as_ref().map(|o| self.compile(o).map(Box::new)).transpose()?,
-                whens: whens.iter().map(|(w, t)| Ok((self.compile(w)?, self.compile(t)?))).collect::<Result<_>>()?,
-                else_: else_.as_ref().map(|e| self.compile(e).map(Box::new)).transpose()?,
+            Expr::Case {
+                operand,
+                whens,
+                else_,
+            } => CExpr::Case {
+                operand: operand
+                    .as_ref()
+                    .map(|o| self.compile(o).map(Box::new))
+                    .transpose()?,
+                whens: whens
+                    .iter()
+                    .map(|(w, t)| Ok((self.compile(w)?, self.compile(t)?)))
+                    .collect::<Result<_>>()?,
+                else_: else_
+                    .as_ref()
+                    .map(|e| self.compile(e).map(Box::new))
+                    .transpose()?,
             },
             Expr::IsNull(a, neg) => CExpr::IsNull(Box::new(self.compile(a)?), *neg),
-            Expr::In(a, b, neg) => CExpr::In(Box::new(self.compile(a)?), Box::new(self.compile(b)?), *neg),
-            Expr::Like { expr, pattern, case_insensitive, negated } => CExpr::Like {
+            Expr::In(a, b, neg) => {
+                CExpr::In(Box::new(self.compile(a)?), Box::new(self.compile(b)?), *neg)
+            }
+            Expr::Like {
+                expr,
+                pattern,
+                case_insensitive,
+                negated,
+            } => CExpr::Like {
                 expr: Box::new(self.compile(expr)?),
                 pattern: Box::new(self.compile(pattern)?),
                 ci: *case_insensitive,
@@ -444,7 +564,12 @@ impl<'a> Compiler<'a> {
                 Box::new(self.compile(hi)?),
                 *neg,
             ),
-            Expr::Func { name, args, distinct, star } => self.func(name, args, *distinct, *star)?,
+            Expr::Func {
+                name,
+                args,
+                distinct,
+                star,
+            } => self.func(name, args, *distinct, *star)?,
         })
     }
 
@@ -460,7 +585,9 @@ impl<'a> Compiler<'a> {
         };
         if let Some(func) = agg {
             if star && func != AggFn::Count {
-                return Err(Error::query(format!("{name}(*) is not valid; only count(*) is")));
+                return Err(Error::query(format!(
+                    "{name}(*) is not valid; only count(*) is"
+                )));
             }
             if !star && args.len() != 1 {
                 return Err(Error::query(format!("{name}() takes exactly one argument")));
@@ -468,9 +595,17 @@ impl<'a> Compiler<'a> {
             let arg = if star {
                 None
             } else {
-                let mut inner = Compiler { g: self.g, params: self.params, scope: self.scope, aliases: &[], aggs: None };
+                let mut inner = Compiler {
+                    g: self.g,
+                    params: self.params,
+                    scope: self.scope,
+                    aliases: &[],
+                    aggs: None,
+                };
                 Some(inner.compile(&args[0]).map_err(|e| match e {
-                    Error::Query(m) if m.contains("aggregate") => Error::query("aggregates cannot be nested"),
+                    Error::Query(m) if m.contains("aggregate") => {
+                        Error::query("aggregates cannot be nested")
+                    }
                     e => e,
                 })?)
             };
@@ -479,7 +614,11 @@ impl<'a> Compiler<'a> {
                     "aggregate {name}() is not allowed here (use it in SELECT, HAVING or ORDER BY)"
                 )));
             };
-            aggs.push(AggSpec { func, arg, distinct });
+            aggs.push(AggSpec {
+                func,
+                arg,
+                distinct,
+            });
             return Ok(CExpr::Agg(aggs.len() - 1));
         }
         if matches!(name, "bm25" | "matches" | "search_score") {
@@ -489,7 +628,9 @@ impl<'a> Compiler<'a> {
             return Err(Error::query(format!("unknown function {name}()")));
         };
         if star || distinct {
-            return Err(Error::query(format!("{name}() does not accept * or DISTINCT")));
+            return Err(Error::query(format!(
+                "{name}() does not accept * or DISTINCT"
+            )));
         }
         if args.len() < min || args.len() > max {
             let expected = match (min, max) {
@@ -497,9 +638,15 @@ impl<'a> Compiler<'a> {
                 (a, usize::MAX) => format!("at least {a}"),
                 (a, b) => format!("{a} to {b}"),
             };
-            return Err(Error::query(format!("{name}() takes {expected} arguments, got {}", args.len())));
+            return Err(Error::query(format!(
+                "{name}() takes {expected} arguments, got {}",
+                args.len()
+            )));
         }
-        let args = args.iter().map(|a| self.compile(a)).collect::<Result<_>>()?;
+        let args = args
+            .iter()
+            .map(|a| self.compile(a))
+            .collect::<Result<_>>()?;
         Ok(CExpr::Call(func, args))
     }
 
@@ -508,7 +655,12 @@ impl<'a> Compiler<'a> {
         let [target, query] = args else {
             return Err(usage());
         };
-        let CExpr::Prop { var, name: prop, slots } = self.compile(target)? else {
+        let CExpr::Prop {
+            var,
+            name: prop,
+            slots,
+        } = self.compile(target)?
+        else {
             return Err(usage());
         };
         for (ty, slot) in &slots {
@@ -522,8 +674,17 @@ impl<'a> Compiler<'a> {
         }
         let terms = match self.compile(query)? {
             CExpr::Const(Value::String(q)) => tokenize(&q),
-            _ => return Err(Error::query(format!("{name}() needs a constant search string or parameter"))),
+            _ => {
+                return Err(Error::query(format!(
+                    "{name}() needs a constant search string or parameter"
+                )));
+            }
         };
-        Ok(CExpr::Text { var, prop, terms, matches: name == "matches" })
+        Ok(CExpr::Text {
+            var,
+            prop,
+            terms,
+            matches: name == "matches",
+        })
     }
 }

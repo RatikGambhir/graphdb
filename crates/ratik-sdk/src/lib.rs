@@ -73,7 +73,11 @@ pub const DEFAULT_URL: &str = "http://127.0.0.1:7285";
 #[derive(Debug, Clone)]
 enum Backend {
     #[cfg(feature = "remote")]
-    Remote { agent: ureq::Agent, base: String, token: Option<String> },
+    Remote {
+        agent: ureq::Agent,
+        base: String,
+        token: Option<String>,
+    },
     #[cfg(feature = "embedded")]
     Embedded(std::sync::Arc<ratikdb::Database>),
 }
@@ -137,7 +141,9 @@ impl Ratik {
     #[cfg(feature = "embedded")]
     #[must_use]
     pub fn embedded(db: ratikdb::Database) -> Self {
-        Self { backend: Backend::Embedded(std::sync::Arc::new(db)) }
+        Self {
+            backend: Backend::Embedded(std::sync::Arc::new(db)),
+        }
     }
 
     // ── the DSL ──────────────────────────────────────────────────────────
@@ -156,12 +162,21 @@ impl Ratik {
     ///
     /// # Errors
     /// Schema/type/constraint errors — if any item is invalid, none are created.
-    pub fn create_many<T: Serialize>(&self, node_type: &str, items: impl IntoIterator<Item = T>) -> Result<Vec<Node>> {
+    pub fn create_many<T: Serialize>(
+        &self,
+        node_type: &str,
+        items: impl IntoIterator<Item = T>,
+    ) -> Result<Vec<Node>> {
         write::create_many(self, node_type, items)
     }
 
     /// Connects two nodes: `db.link(&ada, "FOLLOWS", &alan).run()?`.
-    pub fn link(&self, from: impl Into<NodeId>, edge_type: &str, to: impl Into<NodeId>) -> Link<'_> {
+    pub fn link(
+        &self,
+        from: impl Into<NodeId>,
+        edge_type: &str,
+        to: impl Into<NodeId>,
+    ) -> Link<'_> {
         Link::new(self, from.into(), edge_type, to.into())
     }
 
@@ -169,7 +184,12 @@ impl Ratik {
     ///
     /// # Errors
     /// Schema errors for unknown edge types.
-    pub fn unlink(&self, from: impl Into<NodeId>, edge_type: &str, to: impl Into<NodeId>) -> Result<u64> {
+    pub fn unlink(
+        &self,
+        from: impl Into<NodeId>,
+        edge_type: &str,
+        to: impl Into<NodeId>,
+    ) -> Result<u64> {
         let rows = self
             .query(&format!(
                 "DELETE e FROM (a)-[e:{}]->(b) WHERE a.`_id` = $from AND b.`_id` = $to",
@@ -186,8 +206,15 @@ impl Ratik {
     /// # Errors
     /// Connection errors.
     pub fn node(&self, id: impl Into<NodeId>) -> Result<Option<Node>> {
-        let rows = self.query("SELECT n FROM (n) WHERE n.`_id` = $id").bind("id", id.into().0).fetch()?;
-        rows.rows.into_iter().next().map(|mut r| Node::from_json(r.swap_remove(0))).transpose()
+        let rows = self
+            .query("SELECT n FROM (n) WHERE n.`_id` = $id")
+            .bind("id", id.into().0)
+            .fetch()?;
+        rows.rows
+            .into_iter()
+            .next()
+            .map(|mut r| Node::from_json(r.swap_remove(0)))
+            .transpose()
     }
 
     /// Declares a node or edge type (a no-op if it already exists).
@@ -212,19 +239,30 @@ impl Ratik {
     /// # Errors
     /// Connection errors.
     pub fn schema(&self) -> Result<String> {
-        Ok(self.execute("SHOW SCHEMA")?.column::<String>("ddl")?.join("\n\n"))
+        Ok(self
+            .execute("SHOW SCHEMA")?
+            .column::<String>("ddl")?
+            .join("\n\n"))
     }
 
     // ── RQL ──────────────────────────────────────────────────────────────
 
     /// Prepares an RQL query; add parameters with `.bind(...)`.
     pub fn query(&self, rql: &str) -> Query<'_> {
-        Query { db: self, target: Target::Rql(rql.to_owned()), params: Map::new() }
+        Query {
+            db: self,
+            target: Target::Rql(rql.to_owned()),
+            params: Map::new(),
+        }
     }
 
     /// Prepares a call to a stored query (`CREATE QUERY ...`).
     pub fn call(&self, stored_query: &str) -> Query<'_> {
-        Query { db: self, target: Target::Call(stored_query.to_owned()), params: Map::new() }
+        Query {
+            db: self,
+            target: Target::Call(stored_query.to_owned()),
+            params: Map::new(),
+        }
     }
 
     /// Runs an RQL script with no parameters.
@@ -244,16 +282,24 @@ impl Ratik {
             #[cfg(feature = "remote")]
             Backend::Remote { .. } => {
                 let (path, body) = match target {
-                    Target::Rql(q) => ("/v1/query".to_owned(), serde_json::json!({"query": q, "params": params})),
-                    Target::Call(name) => (format!("/v1/call/{name}"), serde_json::json!({"params": params})),
+                    Target::Rql(q) => (
+                        "/v1/query".to_owned(),
+                        serde_json::json!({"query": q, "params": params}),
+                    ),
+                    Target::Call(name) => (
+                        format!("/v1/call/{name}"),
+                        serde_json::json!({"params": params}),
+                    ),
                 };
                 let json = self.http("POST", &path, Some(body))?;
                 rows::decode(json, "response")
             }
             #[cfg(feature = "embedded")]
             Backend::Embedded(db) => {
-                let params: ratikdb::Params =
-                    params.into_iter().map(|(k, v)| (k, ratikdb::Value::from_json(v))).collect();
+                let params: ratikdb::Params = params
+                    .into_iter()
+                    .map(|(k, v)| (k, ratikdb::Value::from_json(v)))
+                    .collect();
                 let r = match target {
                     Target::Rql(q) => db.execute_with(q, &params)?,
                     Target::Call(name) => db.call(name, &params)?,
@@ -261,7 +307,11 @@ impl Ratik {
                 let s = r.stats;
                 Ok(Rows {
                     columns: r.columns,
-                    rows: r.rows.iter().map(|row| row.iter().map(ratikdb::Value::to_json).collect()).collect(),
+                    rows: r
+                        .rows
+                        .iter()
+                        .map(|row| row.iter().map(ratikdb::Value::to_json).collect())
+                        .collect(),
                     stats: Stats {
                         nodes_created: s.nodes_created,
                         nodes_deleted: s.nodes_deleted,
@@ -313,7 +363,9 @@ impl Ratik {
         let err = &json["error"];
         Err(Error::Database {
             code: err["code"].as_str().unwrap_or("http_error").to_owned(),
-            message: err["message"].as_str().map_or_else(|| format!("HTTP {status}"), str::to_owned),
+            message: err["message"]
+                .as_str()
+                .map_or_else(|| format!("HTTP {status}"), str::to_owned),
         })
     }
 }
@@ -336,7 +388,8 @@ pub struct Query<'db> {
 impl Query<'_> {
     /// Binds `$name` to a value.
     pub fn bind(mut self, name: &str, value: impl Into<Json>) -> Self {
-        self.params.insert(name.trim_start_matches('$').to_owned(), value.into());
+        self.params
+            .insert(name.trim_start_matches('$').to_owned(), value.into());
         self
     }
 

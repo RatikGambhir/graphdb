@@ -22,7 +22,13 @@ pub(crate) struct Env<'a> {
 
 impl<'a> Env<'a> {
     pub(crate) fn new(g: &'a Graph, row: &'a [Value], now: i64) -> Self {
-        Self { g, row, cols: &[], aggs: &[], now }
+        Self {
+            g,
+            row,
+            cols: &[],
+            aggs: &[],
+            now,
+        }
     }
 }
 
@@ -50,9 +56,24 @@ fn prop_by_name(g: &Graph, id: u64, name: &str) -> Value {
     };
     match name {
         "_id" => return Value::Int(id as i64),
-        "_label" => return g.schema.get(ty).map_or(Value::Null, |d| Value::String(d.name.clone())),
-        "_from" => return g.edges.get(&id).map_or(Value::Null, |e| Value::Int(e.from as i64)),
-        "_to" => return g.edges.get(&id).map_or(Value::Null, |e| Value::Int(e.to as i64)),
+        "_label" => {
+            return g
+                .schema
+                .get(ty)
+                .map_or(Value::Null, |d| Value::String(d.name.clone()));
+        }
+        "_from" => {
+            return g
+                .edges
+                .get(&id)
+                .map_or(Value::Null, |e| Value::Int(e.from as i64));
+        }
+        "_to" => {
+            return g
+                .edges
+                .get(&id)
+                .map_or(Value::Null, |e| Value::Int(e.to as i64));
+        }
         _ => {}
     }
     g.schema
@@ -99,10 +120,16 @@ fn arith(op: BinOp, a: &Value, b: &Value) -> Result<Value> {
         (BinOp::Div, Int(x), Int(y)) => Int(x / y),
         (BinOp::Mod, Int(x), Int(y)) => Int(x % y),
         (BinOp::Add, Value::String(x), Value::String(y)) => Value::String(format!("{x}{y}")),
-        (BinOp::Add, Value::List(x), Value::List(y)) => Value::List(x.iter().chain(y).cloned().collect()),
+        (BinOp::Add, Value::List(x), Value::List(y)) => {
+            Value::List(x.iter().chain(y).cloned().collect())
+        }
         (op, a, b) => {
             let (Some(x), Some(y)) = (a.as_f64(), b.as_f64()) else {
-                return Err(Error::ty(format!("cannot apply {op:?} to {} and {}", a.type_name(), b.type_name())));
+                return Err(Error::ty(format!(
+                    "cannot apply {op:?} to {} and {}",
+                    a.type_name(),
+                    b.type_name()
+                )));
             };
             Float(match op {
                 BinOp::Add => x + y,
@@ -124,7 +151,11 @@ fn vectors(a: &Value, b: &Value, f: &str) -> Result<Option<(Vec<f32>, Vec<f32>)>
         return Err(Error::ty(format!("{f}() needs two vectors")));
     };
     if x.len() != y.len() {
-        return Err(Error::ty(format!("{f}() got vectors of different lengths ({} and {})", x.len(), y.len())));
+        return Err(Error::ty(format!(
+            "{f}() got vectors of different lengths ({} and {})",
+            x.len(),
+            y.len()
+        )));
     }
     Ok(Some((x, y)))
 }
@@ -142,7 +173,10 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             let Some((ty, props)) = env.g.element(id) else {
                 return Ok(Value::Null);
             };
-            slots.iter().find(|(t, _)| *t == ty).map_or(Value::Null, |(_, s)| props[*s].clone())
+            slots
+                .iter()
+                .find(|(t, _)| *t == ty)
+                .map_or(Value::Null, |(_, s)| props[*s].clone())
         }
         CExpr::Meta { var, meta } => {
             let Some(id) = element_id(&env.row[*var]) else {
@@ -160,28 +194,51 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             Value::Map(mut m) => m.remove(name).unwrap_or_default(),
             Value::Node(id) | Value::Edge(id) => prop_by_name(env.g, id, name),
             Value::Null => Value::Null,
-            other => return Err(Error::ty(format!("cannot read .{name} of {}", other.type_name()))),
+            other => {
+                return Err(Error::ty(format!(
+                    "cannot read .{name} of {}",
+                    other.type_name()
+                )));
+            }
         },
         CExpr::Index(base, idx) => match (eval(base, env)?, eval(idx, env)?) {
             (Value::List(items), Value::Int(i)) => {
                 let len = items.len() as i64;
                 let i = if i < 0 { len + i } else { i };
-                usize::try_from(i).ok().and_then(|i| items.into_iter().nth(i)).unwrap_or_default()
+                usize::try_from(i)
+                    .ok()
+                    .and_then(|i| items.into_iter().nth(i))
+                    .unwrap_or_default()
             }
-            (Value::Vector(items), Value::Int(i)) => {
-                usize::try_from(i).ok().and_then(|i| items.get(i).copied()).map_or(Value::Null, Value::from)
-            }
+            (Value::Vector(items), Value::Int(i)) => usize::try_from(i)
+                .ok()
+                .and_then(|i| items.get(i).copied())
+                .map_or(Value::Null, Value::from),
             (Value::Map(mut m), Value::String(k)) => m.remove(&k).unwrap_or_default(),
             (Value::Null, _) | (_, Value::Null) => Value::Null,
-            (b, i) => return Err(Error::ty(format!("cannot index {} with {}", b.type_name(), i.type_name()))),
+            (b, i) => {
+                return Err(Error::ty(format!(
+                    "cannot index {} with {}",
+                    b.type_name(),
+                    i.type_name()
+                )));
+            }
         },
         CExpr::Not(a) => match eval(a, env)? {
             Value::Bool(b) => Value::Bool(!b),
             Value::Null => Value::Null,
-            v => return Err(Error::ty(format!("NOT expects BOOL, got {}", v.type_name()))),
+            v => {
+                return Err(Error::ty(format!(
+                    "NOT expects BOOL, got {}",
+                    v.type_name()
+                )));
+            }
         },
         CExpr::Neg(a) => match eval(a, env)? {
-            Value::Int(i) => Value::Int(i.checked_neg().ok_or_else(|| Error::query("integer overflow"))?),
+            Value::Int(i) => Value::Int(
+                i.checked_neg()
+                    .ok_or_else(|| Error::query("integer overflow"))?,
+            ),
             Value::Float(f) => Value::Float(-f),
             Value::Null => Value::Null,
             v => return Err(Error::ty(format!("cannot negate {}", v.type_name()))),
@@ -216,14 +273,16 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             match op {
                 BinOp::Eq => l.sql_eq(&r).map_or(Value::Null, Value::Bool),
                 BinOp::Ne => l.sql_eq(&r).map_or(Value::Null, |b| Value::Bool(!b)),
-                BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => l.sql_cmp(&r).map_or(Value::Null, |o| {
-                    Value::Bool(match op {
-                        BinOp::Lt => o == Ordering::Less,
-                        BinOp::Le => o != Ordering::Greater,
-                        BinOp::Gt => o == Ordering::Greater,
-                        _ => o != Ordering::Less,
+                BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                    l.sql_cmp(&r).map_or(Value::Null, |o| {
+                        Value::Bool(match op {
+                            BinOp::Lt => o == Ordering::Less,
+                            BinOp::Le => o != Ordering::Greater,
+                            BinOp::Gt => o == Ordering::Greater,
+                            _ => o != Ordering::Less,
+                        })
                     })
-                }),
+                }
                 BinOp::Concat => match (&l, &r) {
                     (Value::Null, _) | (_, Value::Null) => Value::Null,
                     (Value::List(_), Value::List(_)) => arith(BinOp::Add, &l, &r)?,
@@ -233,7 +292,12 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             }
         }
         CExpr::Call(f, args) => call(*f, args, env)?,
-        CExpr::Text { var, prop, terms, matches } => {
+        CExpr::Text {
+            var,
+            prop,
+            terms,
+            matches,
+        } => {
             let Some(id) = element_id(&env.row[*var]) else {
                 return Ok(Value::Null);
             };
@@ -241,15 +305,32 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
                 return Ok(Value::Null);
             };
             let Some(idx) = env.g.idx.text(ty, prop) else {
-                return Ok(if *matches { Value::Bool(false) } else { Value::Float(0.0) });
+                return Ok(if *matches {
+                    Value::Bool(false)
+                } else {
+                    Value::Float(0.0)
+                });
             };
-            if *matches { Value::Bool(idx.matches(id, terms)) } else { Value::Float(idx.score(id, terms)) }
+            if *matches {
+                Value::Bool(idx.matches(id, terms))
+            } else {
+                Value::Float(idx.score(id, terms))
+            }
         }
-        CExpr::List(items) => Value::List(items.iter().map(|i| eval(i, env)).collect::<Result<_>>()?),
-        CExpr::Map(items) => {
-            Value::Map(items.iter().map(|(k, v)| Ok((k.clone(), eval(v, env)?))).collect::<Result<_>>()?)
+        CExpr::List(items) => {
+            Value::List(items.iter().map(|i| eval(i, env)).collect::<Result<_>>()?)
         }
-        CExpr::Case { operand, whens, else_ } => {
+        CExpr::Map(items) => Value::Map(
+            items
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), eval(v, env)?)))
+                .collect::<Result<_>>()?,
+        ),
+        CExpr::Case {
+            operand,
+            whens,
+            else_,
+        } => {
             let subject = operand.as_ref().map(|o| eval(o, env)).transpose()?;
             for (w, t) in whens {
                 let w = eval(w, env)?;
@@ -272,7 +353,12 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             let haystack = match eval(list, env)? {
                 Value::List(items) => items,
                 Value::Null => return Ok(Value::Null),
-                v => return Err(Error::ty(format!("IN expects a list, got {}", v.type_name()))),
+                v => {
+                    return Err(Error::ty(format!(
+                        "IN expects a list, got {}",
+                        v.type_name()
+                    )));
+                }
             };
             if needle.is_null() {
                 return Ok(Value::Null);
@@ -280,18 +366,34 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             let found = haystack.iter().any(|h| needle.sql_eq(h) == Some(true));
             Value::Bool(found != *negated)
         }
-        CExpr::Like { expr, pattern, ci, negated } => match (eval(expr, env)?, eval(pattern, env)?) {
+        CExpr::Like {
+            expr,
+            pattern,
+            ci,
+            negated,
+        } => match (eval(expr, env)?, eval(pattern, env)?) {
             (Value::String(s), Value::String(p)) => {
-                let hit = if *ci { like(&s.to_lowercase(), &p.to_lowercase()) } else { like(&s, &p) };
+                let hit = if *ci {
+                    like(&s.to_lowercase(), &p.to_lowercase())
+                } else {
+                    like(&s, &p)
+                };
                 Value::Bool(hit != *negated)
             }
             (Value::Null, _) | (_, Value::Null) => Value::Null,
-            (a, _) => return Err(Error::ty(format!("LIKE expects STRING, got {}", a.type_name()))),
+            (a, _) => {
+                return Err(Error::ty(format!(
+                    "LIKE expects STRING, got {}",
+                    a.type_name()
+                )));
+            }
         },
         CExpr::Between(a, lo, hi, negated) => {
             let (v, lo, hi) = (eval(a, env)?, eval(lo, env)?, eval(hi, env)?);
             match (v.sql_cmp(&lo), v.sql_cmp(&hi)) {
-                (Some(l), Some(h)) => Value::Bool((l != Ordering::Less && h != Ordering::Greater) != *negated),
+                (Some(l), Some(h)) => {
+                    Value::Bool((l != Ordering::Less && h != Ordering::Greater) != *negated)
+                }
                 _ => Value::Null,
             }
         }
@@ -312,20 +414,27 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
     let num = |i: usize, name: &str| -> Result<Option<f64>> {
         match &vals[i] {
             Value::Null => Ok(None),
-            v => v.as_f64().map(Some).ok_or_else(|| Error::ty(format!("{name}() expects a number, got {}", v.type_name()))),
+            v => v.as_f64().map(Some).ok_or_else(|| {
+                Error::ty(format!("{name}() expects a number, got {}", v.type_name()))
+            }),
         }
     };
     let string = |i: usize, name: &str| -> Result<Option<String>> {
         match &vals[i] {
             Value::Null => Ok(None),
             Value::String(s) => Ok(Some(s.clone())),
-            v => Err(Error::ty(format!("{name}() expects a string, got {}", v.type_name()))),
+            v => Err(Error::ty(format!(
+                "{name}() expects a string, got {}",
+                v.type_name()
+            ))),
         }
     };
     let degree = |out: bool, inc: bool| -> Value {
         match &vals[0] {
             Value::Node(id) => env.g.nodes.get(id).map_or(Value::Null, |n| {
-                Value::Int((if out { n.out.len() } else { 0 } + if inc { n.inc.len() } else { 0 }) as i64)
+                Value::Int(
+                    (if out { n.out.len() } else { 0 } + if inc { n.inc.len() } else { 0 }) as i64,
+                )
             }),
             _ => Value::Null,
         }
@@ -334,24 +443,40 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
         Func::Coalesce => unreachable!("handled above"),
         Func::Now => Value::Int(env.now),
         Func::Id => element_id(&vals[0]).map_or(Value::Null, |id| Value::Int(id as i64)),
-        Func::Label => element_id(&vals[0]).map_or(Value::Null, |id| prop_by_name(env.g, id, "_label")),
+        Func::Label => {
+            element_id(&vals[0]).map_or(Value::Null, |id| prop_by_name(env.g, id, "_label"))
+        }
         Func::Lower => string(0, "lower")?.map_or(Value::Null, |s| Value::String(s.to_lowercase())),
         Func::Upper => string(0, "upper")?.map_or(Value::Null, |s| Value::String(s.to_uppercase())),
-        Func::Trim => string(0, "trim")?.map_or(Value::Null, |s| Value::String(s.trim().to_owned())),
+        Func::Trim => {
+            string(0, "trim")?.map_or(Value::Null, |s| Value::String(s.trim().to_owned()))
+        }
         Func::Length => match &vals[0] {
             Value::String(s) => Value::Int(s.chars().count() as i64),
             Value::List(l) => Value::Int(l.len() as i64),
             Value::Vector(v) => Value::Int(v.len() as i64),
             Value::Map(m) => Value::Int(m.len() as i64),
             Value::Null => Value::Null,
-            v => return Err(Error::ty(format!("length() expects a string or list, got {}", v.type_name()))),
+            v => {
+                return Err(Error::ty(format!(
+                    "length() expects a string or list, got {}",
+                    v.type_name()
+                )));
+            }
         },
         Func::Abs => match &vals[0] {
-            Value::Int(i) => Value::Int(i.checked_abs().ok_or_else(|| Error::query("integer overflow"))?),
+            Value::Int(i) => Value::Int(
+                i.checked_abs()
+                    .ok_or_else(|| Error::query("integer overflow"))?,
+            ),
             _ => num(0, "abs")?.map_or(Value::Null, |x| Value::Float(x.abs())),
         },
         Func::Round => {
-            let digits = if vals.len() > 1 { num(1, "round")?.unwrap_or(0.0) } else { 0.0 };
+            let digits = if vals.len() > 1 {
+                num(1, "round")?.unwrap_or(0.0)
+            } else {
+                0.0
+            };
             match &vals[0] {
                 Value::Int(i) => Value::Int(*i),
                 _ => num(0, "round")?.map_or(Value::Null, |x| {
@@ -367,14 +492,27 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
             (Some(a), Some(b)) => Value::Float(a.powf(b)),
             _ => Value::Null,
         },
-        Func::Similarity => vectors(&vals[0], &vals[1], "similarity")?.map_or(Value::Null, |(a, b)| {
-            let (na, nb) = (dot(&a, &a).sqrt(), dot(&b, &b).sqrt());
-            Value::Float(if na == 0.0 || nb == 0.0 { 0.0 } else { f64::from(dot(&a, &b) / (na * nb)) })
-        }),
+        Func::Similarity => {
+            vectors(&vals[0], &vals[1], "similarity")?.map_or(Value::Null, |(a, b)| {
+                let (na, nb) = (dot(&a, &a).sqrt(), dot(&b, &b).sqrt());
+                Value::Float(if na == 0.0 || nb == 0.0 {
+                    0.0
+                } else {
+                    f64::from(dot(&a, &b) / (na * nb))
+                })
+            })
+        }
         Func::Distance => vectors(&vals[0], &vals[1], "distance")?.map_or(Value::Null, |(a, b)| {
-            Value::Float(f64::from(a.iter().zip(&b).map(|(x, y)| (x - y) * (x - y)).sum::<f32>().sqrt()))
+            Value::Float(f64::from(
+                a.iter()
+                    .zip(&b)
+                    .map(|(x, y)| (x - y) * (x - y))
+                    .sum::<f32>()
+                    .sqrt(),
+            ))
         }),
-        Func::Dot => vectors(&vals[0], &vals[1], "dot")?.map_or(Value::Null, |(a, b)| Value::Float(f64::from(dot(&a, &b)))),
+        Func::Dot => vectors(&vals[0], &vals[1], "dot")?
+            .map_or(Value::Null, |(a, b)| Value::Float(f64::from(dot(&a, &b)))),
         Func::ToString => match &vals[0] {
             Value::Null => Value::Null,
             v => Value::String(v.to_string()),
@@ -394,7 +532,11 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
             (Some(s), Some(start)) => {
                 // 1-based like SQL.
                 let start = (start as i64 - 1).max(0) as usize;
-                let len = if vals.len() > 2 { num(2, "substring")?.map(|l| l.max(0.0) as usize) } else { None };
+                let len = if vals.len() > 2 {
+                    num(2, "substring")?.map(|l| l.max(0.0) as usize)
+                } else {
+                    None
+                };
                 let it = s.chars().skip(start);
                 Value::String(match len {
                     Some(l) => it.take(l).collect(),
@@ -414,7 +556,11 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
             }
             _ => Value::Null,
         },
-        Func::Replace => match (string(0, "replace")?, string(1, "replace")?, string(2, "replace")?) {
+        Func::Replace => match (
+            string(0, "replace")?,
+            string(1, "replace")?,
+            string(2, "replace")?,
+        ) {
             (Some(s), Some(from), Some(to)) => Value::String(s.replace(&from, &to)),
             _ => Value::Null,
         },
@@ -431,11 +577,22 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
                 .g
                 .type_of(*id)
                 .and_then(|t| env.g.schema.get(t))
-                .map_or(Value::Null, |d| Value::List(d.props.iter().map(|p| Value::from(p.name.as_str())).collect())),
+                .map_or(Value::Null, |d| {
+                    Value::List(
+                        d.props
+                            .iter()
+                            .map(|p| Value::from(p.name.as_str()))
+                            .collect(),
+                    )
+                }),
             _ => Value::Null,
         },
         Func::Greatest | Func::Least => {
-            let want = if f == Func::Greatest { Ordering::Greater } else { Ordering::Less };
+            let want = if f == Func::Greatest {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
             vals.iter()
                 .filter(|v| !v.is_null())
                 .fold(None::<&Value>, |best, v| match best {

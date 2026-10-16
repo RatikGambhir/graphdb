@@ -43,15 +43,25 @@ struct PropSpec {
 ///     .timestamp("joined").default_now();
 /// assert!(user.to_rql().starts_with("CREATE NODE IF NOT EXISTS `User`"));
 /// ```
-#[must_use]
 pub fn node(name: &str) -> TypeSpec {
-    TypeSpec { kind: "NODE", name: name.to_owned(), from: Vec::new(), to: Vec::new(), props: Vec::new() }
+    TypeSpec {
+        kind: "NODE",
+        name: name.to_owned(),
+        from: Vec::new(),
+        to: Vec::new(),
+        props: Vec::new(),
+    }
 }
 
 /// Starts an edge type declaration: `edge("FOLLOWS").from("User").to("User")`.
-#[must_use]
 pub fn edge(name: &str) -> TypeSpec {
-    TypeSpec { kind: "EDGE", name: name.to_owned(), from: Vec::new(), to: Vec::new(), props: Vec::new() }
+    TypeSpec {
+        kind: "EDGE",
+        name: name.to_owned(),
+        from: Vec::new(),
+        to: Vec::new(),
+        props: Vec::new(),
+    }
 }
 
 /// A node or edge type being declared. Property modifiers (`required`,
@@ -202,7 +212,12 @@ impl TypeSpec {
             .iter()
             .map(|p| {
                 let mut s = format!("{} {}", ident(&p.name), p.ty);
-                for (on, word) in [(p.required, " NOT NULL"), (p.unique, " UNIQUE"), (p.indexed, " INDEX"), (p.searchable, " SEARCHABLE")] {
+                for (on, word) in [
+                    (p.required, " NOT NULL"),
+                    (p.unique, " UNIQUE"),
+                    (p.indexed, " INDEX"),
+                    (p.searchable, " SEARCHABLE"),
+                ] {
                     if on {
                         s.push_str(word);
                     }
@@ -230,10 +245,16 @@ impl TypeSpec {
 fn literal(v: &Json) -> String {
     match v {
         Json::String(s) => format!("'{}'", s.replace('\'', "''")),
-        Json::Array(items) => format!("[{}]", items.iter().map(literal).collect::<Vec<_>>().join(", ")),
+        Json::Array(items) => format!(
+            "[{}]",
+            items.iter().map(literal).collect::<Vec<_>>().join(", ")
+        ),
         Json::Object(map) => format!(
             "{{{}}}",
-            map.iter().map(|(k, v)| format!("{}: {}", ident(k), literal(v))).collect::<Vec<_>>().join(", ")
+            map.iter()
+                .map(|(k, v)| format!("{}: {}", ident(k), literal(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Json::Null => "NULL".into(),
         other => other.to_string(),
@@ -246,7 +267,11 @@ mod tests {
 
     #[test]
     fn renders_edge_with_props() {
-        let e = edge("FOLLOWS").from("User").to("User").int("since").default(2024);
+        let e = edge("FOLLOWS")
+            .from("User")
+            .to("User")
+            .int("since")
+            .default(2024);
         assert_eq!(
             e.to_rql(),
             "CREATE EDGE IF NOT EXISTS `FOLLOWS` FROM `User` TO `User` (`since` INT DEFAULT 2024)"

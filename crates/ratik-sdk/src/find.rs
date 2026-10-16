@@ -203,16 +203,24 @@ impl<'db> Find<'db> {
 
     /// Ranks by vector similarity to `vector` (uses the HNSW index).
     /// Returns the 10 closest unless you set [`limit`](Self::limit).
-    pub fn nearest<V: Into<Json>>(mut self, vector_prop: &str, vector: impl IntoIterator<Item = V>) -> Self {
+    pub fn nearest<V: Into<Json>>(
+        mut self,
+        vector_prop: &str,
+        vector: impl IntoIterator<Item = V>,
+    ) -> Self {
         let v = Json::Array(vector.into_iter().map(Into::into).collect());
-        self.order.insert(0, OrderKey::Nearest(vector_prop.to_owned(), v));
+        self.order
+            .insert(0, OrderKey::Nearest(vector_prop.to_owned(), v));
         self
     }
 
     /// Full-text search on a `SEARCHABLE` property, best matches first.
     pub fn search(mut self, text_prop: &str, text: &str) -> Self {
         self = self.filter(prop(text_prop).matches(text));
-        self.order.insert(0, OrderKey::Relevance(text_prop.to_owned(), text.to_owned()));
+        self.order.insert(
+            0,
+            OrderKey::Relevance(text_prop.to_owned(), text.to_owned()),
+        );
         self
     }
 
@@ -243,19 +251,32 @@ impl<'db> Find<'db> {
     /// `FROM ... WHERE ...` (shared by every terminal).
     fn render_match(&self, bag: &mut Bag) -> Result<(String, Vec<String>)> {
         let mut pattern = format!("(n0:{})", ident(&self.label));
-        let mut wheres: Vec<String> = self.start_filters.iter().map(|c| c.render("n0", bag)).collect();
+        let mut wheres: Vec<String> = self
+            .start_filters
+            .iter()
+            .map(|c| c.render("n0", bag))
+            .collect();
         for (i, h) in self.hops.iter().enumerate() {
             let (n, e) = (format!("n{}", i + 1), format!("e{}", i + 1));
             if h.hops.is_some() && !h.edge_filters.is_empty() {
-                return Err(Error::Usage("where_edge() cannot be combined with hops()".into()));
+                return Err(Error::Usage(
+                    "where_edge() cannot be combined with hops()".into(),
+                ));
             }
-            let mut body = if h.hops.is_some() { String::new() } else { e.clone() };
+            let mut body = if h.hops.is_some() {
+                String::new()
+            } else {
+                e.clone()
+            };
             if let Some(label) = &h.edge {
                 body.push(':');
                 body.push_str(&ident(label));
             }
             if let Some((min, max)) = h.hops {
-                body.push_str(&format!("*{min}..{}", max.map(|m| m.to_string()).unwrap_or_default()));
+                body.push_str(&format!(
+                    "*{min}..{}",
+                    max.map(|m| m.to_string()).unwrap_or_default()
+                ));
             }
             let node = match &h.node_type {
                 Some(t) => format!("({n}:{})", ident(t)),
@@ -275,7 +296,10 @@ impl<'db> Find<'db> {
     fn render_select(&self, projection: &str, bag: &mut Bag) -> Result<String> {
         let (pattern, wheres) = self.render_match(bag)?;
         let target = self.target();
-        let mut q = format!("SELECT {}{projection} FROM {pattern}", if self.distinct { "DISTINCT " } else { "" });
+        let mut q = format!(
+            "SELECT {}{projection} FROM {pattern}",
+            if self.distinct { "DISTINCT " } else { "" }
+        );
         if !wheres.is_empty() {
             q.push_str(&format!(" WHERE {}", wheres.join(" AND ")));
         }
@@ -284,10 +308,20 @@ impl<'db> Find<'db> {
                 .order
                 .iter()
                 .map(|k| match k {
-                    OrderKey::Prop(p, desc) => format!("{target}.{}{}", ident(p), if *desc { " DESC" } else { "" }),
-                    OrderKey::Nearest(p, v) => format!("similarity({target}.{}, {}) DESC", ident(p), bag.push(v.clone())),
+                    OrderKey::Prop(p, desc) => {
+                        format!("{target}.{}{}", ident(p), if *desc { " DESC" } else { "" })
+                    }
+                    OrderKey::Nearest(p, v) => format!(
+                        "similarity({target}.{}, {}) DESC",
+                        ident(p),
+                        bag.push(v.clone())
+                    ),
                     OrderKey::Relevance(p, text) => {
-                        format!("bm25({target}.{}, {}) DESC", ident(p), bag.push(Json::String(text.clone())))
+                        format!(
+                            "bm25({target}.{}, {}) DESC",
+                            ident(p),
+                            bag.push(Json::String(text.clone()))
+                        )
                     }
                 })
                 .collect();
@@ -328,7 +362,11 @@ impl<'db> Find<'db> {
     /// Schema errors (unknown type/property), connection errors.
     pub fn all(&self) -> Result<Vec<Node>> {
         let target = self.target();
-        self.fetch(&target)?.rows.into_iter().map(|mut r| Node::from_json(r.swap_remove(0))).collect()
+        self.fetch(&target)?
+            .rows
+            .into_iter()
+            .map(|mut r| Node::from_json(r.swap_remove(0)))
+            .collect()
     }
 
     /// The first matching node, if any.
@@ -344,7 +382,8 @@ impl<'db> Find<'db> {
     /// # Errors
     /// See [`Find::all`].
     pub fn one(&self) -> Result<Node> {
-        self.first()?.ok_or_else(|| Error::NotFound(self.label.clone()))
+        self.first()?
+            .ok_or_else(|| Error::NotFound(self.label.clone()))
     }
 
     /// Every matching node decoded into your own type.
@@ -382,7 +421,10 @@ impl<'db> Find<'db> {
     /// See [`Find::all`].
     pub fn select(&self, props: &[&str]) -> Result<Rows> {
         let target = self.target();
-        let cols: Vec<String> = props.iter().map(|p| format!("{target}.{} AS {}", ident(p), ident(p))).collect();
+        let cols: Vec<String> = props
+            .iter()
+            .map(|p| format!("{target}.{} AS {}", ident(p), ident(p)))
+            .collect();
         self.fetch(&cols.join(", "))
     }
 
@@ -392,13 +434,19 @@ impl<'db> Find<'db> {
     /// [`Error::Usage`] when there is no traversal or it uses `hops()`.
     pub fn edges(&self) -> Result<Vec<Edge>> {
         let Some(last) = self.hops.last() else {
-            return Err(Error::Usage("edges() needs a traversal such as .outgoing(\"FOLLOWS\")".into()));
+            return Err(Error::Usage(
+                "edges() needs a traversal such as .outgoing(\"FOLLOWS\")".into(),
+            ));
         };
         if last.hops.is_some() {
             return Err(Error::Usage("edges() is not available after hops()".into()));
         }
         let e = format!("e{}", self.hops.len());
-        self.fetch(&e)?.rows.into_iter().map(|mut r| Edge::from_json(r.swap_remove(0))).collect()
+        self.fetch(&e)?
+            .rows
+            .into_iter()
+            .map(|mut r| Edge::from_json(r.swap_remove(0)))
+            .collect()
     }
 
     /// Number of matches.
@@ -410,7 +458,11 @@ impl<'db> Find<'db> {
         q.order.clear();
         q.limit = None;
         q.skip = None;
-        let projection = if q.distinct { format!("count(DISTINCT {})", q.target()) } else { "count(*)".into() };
+        let projection = if q.distinct {
+            format!("count(DISTINCT {})", q.target())
+        } else {
+            "count(*)".into()
+        };
         q.distinct = false;
         let rows = q.fetch(&projection)?;
         rows.first().map_or(Ok(0), |r| r.get(&rows.columns[0]))
@@ -426,14 +478,19 @@ impl<'db> Find<'db> {
 
     fn reject_paging(&self, what: &str) -> Result<()> {
         if self.limit.is_some() || self.skip.is_some() || !self.order.is_empty() {
-            return Err(Error::Usage(format!("{what} cannot be combined with order_by/limit/skip/nearest/search")));
+            return Err(Error::Usage(format!(
+                "{what} cannot be combined with order_by/limit/skip/nearest/search"
+            )));
         }
         Ok(())
     }
 
     /// Starts an update of every match: `.update().set("age", 37).run()`.
     pub fn update(self) -> Update<'db> {
-        Update { find: self, sets: Vec::new() }
+        Update {
+            find: self,
+            sets: Vec::new(),
+        }
     }
 
     /// Deletes every match (and, for nodes, their edges). Returns how many
@@ -492,7 +549,11 @@ impl Update<'_> {
             .map(|(p, v, add)| {
                 let p = ident(&p);
                 let v = bag.push(v);
-                if add { format!("{t}.{p} = {t}.{p} + {v}") } else { format!("{t}.{p} = {v}") }
+                if add {
+                    format!("{t}.{p} = {t}.{p} + {v}")
+                } else {
+                    format!("{t}.{p} = {v}")
+                }
             })
             .collect();
         let mut q = format!("UPDATE {pattern} SET {}", sets.join(", "));
@@ -500,6 +561,12 @@ impl Update<'_> {
             q.push_str(&format!(" WHERE {}", wheres.join(" AND ")));
         }
         q.push_str(&format!(" RETURNING {t}"));
-        self.find.db.run_rql(&q, bag.params)?.rows.into_iter().map(|mut r| Node::from_json(r.swap_remove(0))).collect()
+        self.find
+            .db
+            .run_rql(&q, bag.params)?
+            .rows
+            .into_iter()
+            .map(|mut r| Node::from_json(r.swap_remove(0)))
+            .collect()
     }
 }

@@ -28,7 +28,9 @@ const MAX_RECORD: u32 = 1 << 30;
 /// When the log is flushed to stable storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SyncMode {
-    /// `fsync` after every committed transaction (safest; default).
+    /// `fsync` after every committed transaction (safest; default). On
+    /// macOS this is `F_FULLFSYNC`, which also flushes the drive's own write
+    /// cache — plain `fsync` there does not guarantee the data hit the disk.
     #[default]
     Always,
     /// Leave flushing to the operating system (fastest; a power loss may lose
@@ -55,19 +57,25 @@ fn write_header(w: &mut impl Write, magic: &[u8; 8], generation: u64) -> Result<
 
 fn read_header(r: &mut impl Read, magic: &[u8; 8], what: &str) -> Result<u64> {
     let mut buf = [0u8; HEADER_LEN as usize];
-    r.read_exact(&mut buf).map_err(|_| Error::Corrupt(format!("{what}: truncated header")))?;
+    r.read_exact(&mut buf)
+        .map_err(|_| Error::Corrupt(format!("{what}: truncated header")))?;
     if &buf[..8] != magic {
         return Err(Error::Corrupt(format!("{what}: not a RatikDB file")));
     }
     let version = u32::from_le_bytes(buf[8..8 + 4].try_into().expect("4-byte slice"));
     if version != FORMAT_VERSION {
-        return Err(Error::Corrupt(format!("{what}: unsupported format version {version}")));
+        return Err(Error::Corrupt(format!(
+            "{what}: unsupported format version {version}"
+        )));
     }
-    Ok(u64::from_le_bytes(buf[8 + 4..8 + 4 + 8].try_into().expect("8-byte slice")))
+    Ok(u64::from_le_bytes(
+        buf[8 + 4..8 + 4 + 8].try_into().expect("8-byte slice"),
+    ))
 }
 
 fn write_record(w: &mut impl Write, payload: &[u8]) -> Result<()> {
-    let len = u32::try_from(payload.len()).map_err(|_| Error::query("transaction too large (over 4 GiB)"))?;
+    let len = u32::try_from(payload.len())
+        .map_err(|_| Error::query("transaction too large (over 4 GiB)"))?;
     let mut buf = Vec::with_capacity(8 + payload.len());
     buf.extend_from_slice(&len.to_le_bytes());
     buf.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
@@ -117,8 +125,13 @@ impl Wal {
     /// Opens (or creates) a data directory and rebuilds the graph from it.
     pub(crate) fn open(dir: &Path, sync: SyncMode) -> Result<(Graph, Self)> {
         fs::create_dir_all(dir)?;
-        let lock = OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("LOCK"))?;
-        lock.try_lock().map_err(|_| Error::Locked(dir.display().to_string()))?;
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join("LOCK"))?;
+        lock.try_lock()
+            .map_err(|_| Error::Locked(dir.display().to_string()))?;
 
         let mut graph = Graph::default();
         let snap_path = dir.join("snapshot.rtk");
@@ -164,7 +177,17 @@ impl Wal {
             (file, snap_gen + 1, size)
         };
 
-        Ok((graph, Self { file, dir: dir.to_path_buf(), generation, size, sync, _lock: lock }))
+        Ok((
+            graph,
+            Self {
+                file,
+                dir: dir.to_path_buf(),
+                generation,
+                size,
+                sync,
+                _lock: lock,
+            },
+        ))
     }
 
     /// Atomically replaces `wal.rtk` with an empty log of `generation`.
@@ -177,7 +200,10 @@ impl Wal {
         }
         fs::rename(&tmp, dir.join("wal.rtk"))?;
         sync_dir(dir);
-        let mut file = OpenOptions::new().read(true).write(true).open(dir.join("wal.rtk"))?;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(dir.join("wal.rtk"))?;
         file.seek(SeekFrom::End(0))?;
         Ok((file, HEADER_LEN))
     }

@@ -18,7 +18,10 @@ pub(crate) struct PropIndex {
 impl PropIndex {
     pub(crate) fn insert(&mut self, value: &Value, id: ElementId) {
         if !value.is_null() {
-            self.map.entry(OrdValue(value.clone())).or_default().insert(id);
+            self.map
+                .entry(OrdValue(value.clone()))
+                .or_default()
+                .insert(id);
         }
     }
 
@@ -43,7 +46,11 @@ impl PropIndex {
     }
 
     pub(crate) fn eq(&self, value: &Value) -> impl Iterator<Item = ElementId> + '_ {
-        self.map.get(&OrdValue(value.clone())).into_iter().flatten().copied()
+        self.map
+            .get(&OrdValue(value.clone()))
+            .into_iter()
+            .flatten()
+            .copied()
     }
 
     pub(crate) fn range(&self, lo: Bound<&Value>, hi: Bound<&Value>) -> Vec<ElementId> {
@@ -53,12 +60,17 @@ impl PropIndex {
             Bound::Unbounded => Bound::Unbounded,
         };
         let (lo, hi) = (wrap(lo), wrap(hi));
-        if let (Bound::Included(a) | Bound::Excluded(a), Bound::Included(b) | Bound::Excluded(b)) = (&lo, &hi)
+        if let (Bound::Included(a) | Bound::Excluded(a), Bound::Included(b) | Bound::Excluded(b)) =
+            (&lo, &hi)
             && a > b
         {
             return Vec::new();
         }
-        let mut out: Vec<ElementId> = self.map.range((lo, hi)).flat_map(|(_, ids)| ids.iter().copied()).collect();
+        let mut out: Vec<ElementId> = self
+            .map
+            .range((lo, hi))
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect();
         out.sort_unstable();
         out
     }
@@ -66,6 +78,9 @@ impl PropIndex {
     /// Number of distinct indexed values with more than one element (used
     /// when turning a plain index into a UNIQUE one).
     pub(crate) fn first_duplicate(&self) -> Option<&Value> {
-        self.map.iter().find(|(_, ids)| ids.len() > 1).map(|(v, _)| &v.0)
+        self.map
+            .iter()
+            .find(|(_, ids)| ids.len() > 1)
+            .map(|(v, _)| &v.0)
     }
 }

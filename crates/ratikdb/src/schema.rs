@@ -57,10 +57,17 @@ impl PropType {
     /// # Errors
     /// Returns [`Error::Type`] when the value does not fit.
     pub fn coerce(&self, value: Value, what: &str) -> Result<Value> {
-        let mismatch = |v: &Value| Error::ty(format!("{what} expects {self}, got {} ({v})", v.type_name()));
+        let mismatch = |v: &Value| {
+            Error::ty(format!(
+                "{what} expects {self}, got {} ({v})",
+                v.type_name()
+            ))
+        };
         match (self, value) {
             (_, Value::Null) => Ok(Value::Null),
-            (Self::Bool, v @ Value::Bool(_)) | (Self::Int | Self::Timestamp, v @ Value::Int(_)) => Ok(v),
+            (Self::Bool, v @ Value::Bool(_)) | (Self::Int | Self::Timestamp, v @ Value::Int(_)) => {
+                Ok(v)
+            }
             (Self::Float, Value::Int(i)) => Ok(Value::Float(i as f64)),
             (Self::Float, v @ Value::Float(_)) | (Self::String, v @ Value::String(_)) => Ok(v),
             (Self::Vector(dim), v @ (Value::Vector(_) | Value::List(_))) => {
@@ -90,7 +97,10 @@ impl PropType {
     }
 
     pub(crate) fn is_indexable(&self) -> bool {
-        matches!(self, Self::Bool | Self::Int | Self::Float | Self::String | Self::Timestamp)
+        matches!(
+            self,
+            Self::Bool | Self::Int | Self::Float | Self::String | Self::Timestamp
+        )
     }
 }
 
@@ -174,16 +184,25 @@ impl PropDef {
             )));
         }
         if self.has_btree() && !self.ty.is_indexable() {
-            return Err(Error::schema(format!("{at}: {} properties cannot be INDEX or UNIQUE", self.ty)));
+            return Err(Error::schema(format!(
+                "{at}: {} properties cannot be INDEX or UNIQUE",
+                self.ty
+            )));
         }
         if self.searchable && self.ty != PropType::String {
-            return Err(Error::schema(format!("{at}: only STRING properties can be SEARCHABLE")));
+            return Err(Error::schema(format!(
+                "{at}: only STRING properties can be SEARCHABLE"
+            )));
         }
         if let Some(DefaultValue::Value(v)) = &self.default {
             self.ty.coerce(v.clone(), &format!("default of {at}"))?;
         }
-        if matches!(self.default, Some(DefaultValue::Now)) && !matches!(self.ty, PropType::Timestamp | PropType::Int) {
-            return Err(Error::schema(format!("{at}: DEFAULT now() requires TIMESTAMP or INT")));
+        if matches!(self.default, Some(DefaultValue::Now))
+            && !matches!(self.ty, PropType::Timestamp | PropType::Int)
+        {
+            return Err(Error::schema(format!(
+                "{at}: DEFAULT now() requires TIMESTAMP or INT"
+            )));
         }
         Ok(())
     }
@@ -219,12 +238,25 @@ impl fmt::Display for PropDef {
 pub(crate) fn literal(v: &Value) -> String {
     match v {
         Value::String(s) => format!("'{}'", s.replace('\'', "''")),
-        Value::List(items) => format!("[{}]", items.iter().map(literal).collect::<Vec<_>>().join(", ")),
+        Value::List(items) => format!(
+            "[{}]",
+            items.iter().map(literal).collect::<Vec<_>>().join(", ")
+        ),
         Value::Map(map) => format!(
             "{{{}}}",
-            map.iter().map(|(k, v)| format!("{k}: {}", literal(v))).collect::<Vec<_>>().join(", ")
+            map.iter()
+                .map(|(k, v)| format!("{k}: {}", literal(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
-        Value::Vector(items) => format!("[{}]", items.iter().map(f32::to_string).collect::<Vec<_>>().join(", ")),
+        Value::Vector(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(f32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         other => other.to_string(),
     }
 }
@@ -290,7 +322,12 @@ impl TypeDef {
     pub fn ddl(&self) -> String {
         let mut out = format!("CREATE {} {}", self.kind, self.name);
         if self.kind == Kind::Edge {
-            let _ = write!(out, " FROM {} TO {}", self.from.join(" | "), self.to.join(" | "));
+            let _ = write!(
+                out,
+                " FROM {} TO {}",
+                self.from.join(" | "),
+                self.to.join(" | ")
+            );
         }
         if !self.props.is_empty() || self.kind == Kind::Node {
             out.push_str(" (\n");
@@ -343,15 +380,24 @@ impl Schema {
                 article(kind)
             ))),
             None => {
-                let names = self.types.values().filter(|t| t.kind == kind).map(|t| t.name.as_str());
+                let names = self
+                    .types
+                    .values()
+                    .filter(|t| t.kind == kind)
+                    .map(|t| t.name.as_str());
                 let suggestion = hint(name, names);
+                let kind_name = kind.to_string().to_lowercase();
+                if !suggestion.is_empty() {
+                    return Err(Error::schema(format!(
+                        "unknown {kind_name} type '{name}'{suggestion}"
+                    )));
+                }
                 let declare = match kind {
                     Kind::Node => format!("CREATE NODE {name} (...)"),
                     Kind::Edge => format!("CREATE EDGE {name} FROM ... TO ..."),
                 };
                 Err(Error::schema(format!(
-                    "unknown {} type '{name}'{suggestion}. Declare it first with `{declare}`",
-                    kind.to_string().to_lowercase()
+                    "unknown {kind_name} type '{name}' — declare it first with `{declare}`"
                 )))
             }
         }
@@ -388,7 +434,10 @@ impl Schema {
     }
 
     /// Edge types whose endpoints reference node type `name`.
-    pub(crate) fn edges_referencing<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a TypeDef> + 'a {
+    pub(crate) fn edges_referencing<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a TypeDef> + 'a {
         self.of_kind(Kind::Edge)
             .filter(move |e| e.from.iter().chain(&e.to).any(|n| n == name))
     }
@@ -415,13 +464,24 @@ mod tests {
 
     #[test]
     fn coercion_is_strict_but_lossless() {
-        assert_eq!(PropType::Float.coerce(Value::Int(3), "x").unwrap(), Value::Float(3.0));
+        assert_eq!(
+            PropType::Float.coerce(Value::Int(3), "x").unwrap(),
+            Value::Float(3.0)
+        );
         assert!(PropType::Int.coerce(Value::Float(3.5), "x").is_err());
         assert!(PropType::String.coerce(Value::Int(1), "x").is_err());
-        let v = PropType::Vector(2).coerce(Value::List(vec![Value::Int(1), Value::Float(0.5)]), "x");
+        let v =
+            PropType::Vector(2).coerce(Value::List(vec![Value::Int(1), Value::Float(0.5)]), "x");
         assert_eq!(v.unwrap(), Value::Vector(vec![1.0, 0.5]));
-        assert!(PropType::Vector(3).coerce(Value::Vector(vec![1.0]), "x").is_err());
+        assert!(
+            PropType::Vector(3)
+                .coerce(Value::Vector(vec![1.0]), "x")
+                .is_err()
+        );
         let list = PropType::List(Box::new(PropType::String));
-        assert!(list.coerce(Value::List(vec!["a".into(), Value::Int(1)]), "x").is_err());
+        assert!(
+            list.coerce(Value::List(vec!["a".into(), Value::Int(1)]), "x")
+                .is_err()
+        );
     }
 }

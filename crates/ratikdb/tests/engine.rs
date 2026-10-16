@@ -37,20 +37,52 @@ fn strings(db: &Database, q: &str) -> Vec<String> {
         .unwrap_or_else(|e| panic!("{q}: {e}"))
         .rows
         .into_iter()
-        .map(|r| r.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join("|"))
+        .map(|r| {
+            r.into_iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join("|")
+        })
         .collect()
 }
 
 #[test]
 fn sql_style_selects() {
     let db = db();
-    assert_eq!(strings(&db, "SELECT name FROM User WHERE age > 40 ORDER BY age DESC"), ["grace", "alan"]);
-    assert_eq!(strings(&db, "SELECT name, age FROM User u ORDER BY u.age LIMIT 2 OFFSET 1"), ["ada|36", "alan|41"]);
-    assert_eq!(strings(&db, "SELECT count(*) AS n, max(age), avg(age) FROM User"), ["4|45|37.5"]);
-    assert_eq!(strings(&db, "SELECT name FROM User WHERE name LIKE '%a%' AND name NOT IN ['ada'] ORDER BY name"), ["alan", "grace"]);
-    assert_eq!(strings(&db, "SELECT name FROM User WHERE age BETWEEN 30 AND 40"), ["ada"]);
     assert_eq!(
-        strings(&db, "SELECT CASE WHEN age >= 40 THEN 'senior' ELSE 'junior' END AS band, count(*) FROM User GROUP BY band ORDER BY band"),
+        strings(
+            &db,
+            "SELECT name FROM User WHERE age > 40 ORDER BY age DESC"
+        ),
+        ["grace", "alan"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT name, age FROM User u ORDER BY u.age LIMIT 2 OFFSET 1"
+        ),
+        ["ada|36", "alan|41"]
+    );
+    assert_eq!(
+        strings(&db, "SELECT count(*) AS n, max(age), avg(age) FROM User"),
+        ["4|45|37.5"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT name FROM User WHERE name LIKE '%a%' AND name NOT IN ['ada'] ORDER BY name"
+        ),
+        ["alan", "grace"]
+    );
+    assert_eq!(
+        strings(&db, "SELECT name FROM User WHERE age BETWEEN 30 AND 40"),
+        ["ada"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT CASE WHEN age >= 40 THEN 'senior' ELSE 'junior' END AS band, count(*) FROM User GROUP BY band ORDER BY band"
+        ),
         ["junior|2", "senior|2"]
     );
     let star = db.execute("SELECT * FROM Post").unwrap();
@@ -60,23 +92,68 @@ fn sql_style_selects() {
 #[test]
 fn graph_patterns_and_traversals() {
     let db = db();
-    assert_eq!(strings(&db, "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS]->(b)"), ["linus"]);
-    assert_eq!(strings(&db, "SELECT a.name FROM (a)-[:FOLLOWS]->(b:User {name: 'grace'})"), ["linus"]);
     assert_eq!(
-        strings(&db, "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS*1..3]->(b) ORDER BY b.name"),
+        strings(
+            &db,
+            "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS]->(b)"
+        ),
+        ["linus"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT a.name FROM (a)-[:FOLLOWS]->(b:User {name: 'grace'})"
+        ),
+        ["linus"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS*1..3]->(b) ORDER BY b.name"
+        ),
         ["alan", "grace", "linus"]
     );
-    assert_eq!(strings(&db, "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS*2]->(b)"), ["grace"]);
     assert_eq!(
-        strings(&db, "SELECT a.name, f.since, b.name FROM (a)-[f:FOLLOWS]->(b) WHERE f.since >= 2021 ORDER BY f.since"),
+        strings(
+            &db,
+            "SELECT b.name FROM (a:User {name: 'ada'})-[:FOLLOWS*2]->(b)"
+        ),
+        ["grace"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT a.name, f.since, b.name FROM (a)-[f:FOLLOWS]->(b) WHERE f.since >= 2021 ORDER BY f.since"
+        ),
         ["linus|2021|grace", "grace|2022|alan"]
     );
-    assert_eq!(strings(&db, "SELECT p.title FROM (u:User)-[:WROTE]->(p) WHERE u.name = 'ada'"), ["Notes on the Analytical Engine"]);
-    assert_eq!(strings(&db, "SELECT x.name FROM (x)<-[:FOLLOWS]-(:User {name: 'linus'})"), ["grace"]);
-    assert_eq!(strings(&db, "SELECT n.name FROM (n:User {name: 'linus'})-[:FOLLOWS]-(m), (m)-[]-(n) WHERE m.name = 'ada'"), ["linus"]);
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT p.title FROM (u:User)-[:WROTE]->(p) WHERE u.name = 'ada'"
+        ),
+        ["Notes on the Analytical Engine"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT x.name FROM (x)<-[:FOLLOWS]-(:User {name: 'linus'})"
+        ),
+        ["grace"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT n.name FROM (n:User {name: 'linus'})-[:FOLLOWS]-(m), (m)-[]-(n) WHERE m.name = 'ada'"
+        ),
+        ["linus"]
+    );
     // Friends-of-friends with an aggregate.
     assert_eq!(
-        strings(&db, "SELECT a.name, count(c) AS fof FROM (a:User)-[:FOLLOWS]->(b)-[:FOLLOWS]->(c) GROUP BY a.name ORDER BY a.name"),
+        strings(
+            &db,
+            "SELECT a.name, count(c) AS fof FROM (a:User)-[:FOLLOWS]->(b)-[:FOLLOWS]->(c) GROUP BY a.name ORDER BY a.name"
+        ),
         ["ada|1", "linus|1"]
     );
 }
@@ -84,18 +161,36 @@ fn graph_patterns_and_traversals() {
 #[test]
 fn vectors_and_full_text() {
     let db = db();
-    assert_eq!(strings(&db, "SELECT name FROM User ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 2"), ["ada", "grace"]);
     assert_eq!(
-        strings(&db, "SELECT name FROM User WHERE age > 40 ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 1"),
+        strings(
+            &db,
+            "SELECT name FROM User ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 2"
+        ),
+        ["ada", "grace"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT name FROM User WHERE age > 40 ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 1"
+        ),
         ["grace"]
     );
-    let plan = strings(&db, "EXPLAIN SELECT name FROM User ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 2");
+    let plan = strings(
+        &db,
+        "EXPLAIN SELECT name FROM User ORDER BY similarity(emb, [1, 0, 0]) DESC LIMIT 2",
+    );
     assert!(plan[0].contains("HNSW"), "{plan:?}");
     assert_eq!(
-        strings(&db, "SELECT name FROM User WHERE matches(bio, 'graph theory') ORDER BY bm25(bio, 'graph theory') DESC"),
+        strings(
+            &db,
+            "SELECT name FROM User WHERE matches(bio, 'graph theory') ORDER BY bm25(bio, 'graph theory') DESC"
+        ),
         ["alan", "linus"]
     );
-    let plan = strings(&db, "EXPLAIN SELECT name FROM User WHERE matches(bio, 'graph')");
+    let plan = strings(
+        &db,
+        "EXPLAIN SELECT name FROM User WHERE matches(bio, 'graph')",
+    );
     assert!(plan[0].contains("BM25"), "{plan:?}");
 }
 
@@ -106,7 +201,10 @@ fn index_access_paths() {
     assert!(plan[0].contains("index name"), "{plan:?}");
     let plan = strings(&db, "EXPLAIN SELECT * FROM User WHERE age > 40");
     assert!(plan[0].contains("range"), "{plan:?}");
-    let plan = strings(&db, "EXPLAIN SELECT b FROM (a:User {name: 'ada'})-[:FOLLOWS]->(b)");
+    let plan = strings(
+        &db,
+        "EXPLAIN SELECT b FROM (a:User {name: 'ada'})-[:FOLLOWS]->(b)",
+    );
     assert!(plan[0].contains("(a:User) via index"), "{plan:?}");
 }
 
@@ -117,55 +215,90 @@ fn strict_schema_rejects_undeclared_things() {
     assert!(err("SELECT * FROM Usr").contains("did you mean 'User'"));
     assert!(err("SELECT agee FROM User").contains("did you mean 'age'"));
     assert!(err("SELECT u.agee FROM User u").contains("did you mean 'age'"));
-    assert!(err("INSERT INTO User (name, nickname) VALUES ('x', 'y')").contains("no property 'nickname'"));
+    assert!(
+        err("INSERT INTO User (name, nickname) VALUES ('x', 'y')")
+            .contains("no property 'nickname'")
+    );
     assert!(err("INSERT INTO Robot (name) VALUES ('x')").contains("unknown node type 'Robot'"));
     assert!(err("INSERT INTO User (name, age) VALUES ('x', 'old')").contains("expects INT"));
     assert!(err("INSERT INTO User (age) VALUES (3)").contains("NOT NULL"));
     assert!(err("INSERT INTO User (name) VALUES ('ada')").contains("UNIQUE"));
     assert!(err("INSERT INTO User (name, emb) VALUES ('v', [1, 2])").contains("VECTOR(3)"));
-    assert!(err("SELECT p FROM (p:Post)-[:FOLLOWS]->(u)").contains("FOLLOWS goes from User to User"));
-    assert!(err("INSERT (p)-[:FOLLOWS]->(u) FROM Post p, User u").contains("FOLLOWS edges go from User to User"));
+    assert!(
+        err("SELECT p FROM (p:Post)-[:FOLLOWS]->(u)").contains("FOLLOWS goes from User to User")
+    );
+    assert!(
+        err("INSERT (p)-[:FOLLOWS]->(u) FROM Post p, User u")
+            .contains("FOLLOWS edges go from User to User")
+    );
     assert!(err("SELECT x FROM (x)-[:LIKES]->(y)").contains("unknown edge type 'LIKES'"));
-    assert!(matches!(db.execute("SELECT name FROM User WHERE").unwrap_err(), Error::Syntax { .. }));
+    assert!(matches!(
+        db.execute("SELECT name FROM User WHERE").unwrap_err(),
+        Error::Syntax { .. }
+    ));
 }
 
 #[test]
 fn writes_and_transactions() {
     let db = db();
-    let r = db.execute("UPDATE User SET age = age + 1 WHERE name = 'ada' RETURNING name, age").unwrap();
+    let r = db
+        .execute("UPDATE User SET age = age + 1 WHERE name = 'ada' RETURNING name, age")
+        .unwrap();
     assert_eq!(r.rows, vec![vec![Value::from("ada"), Value::Int(37)]]);
     assert_eq!(r.stats.properties_set, 1);
 
     let r = db.execute("DELETE FROM User WHERE name = 'linus'").unwrap();
     assert_eq!((r.stats.nodes_deleted, r.stats.edges_deleted), (1, 2));
-    assert_eq!(strings(&db, "SELECT count(*) FROM (a)-[:FOLLOWS]->(b)"), ["1"]);
+    assert_eq!(
+        strings(&db, "SELECT count(*) FROM (a)-[:FOLLOWS]->(b)"),
+        ["1"]
+    );
 
     // A failing statement rolls back the whole script.
     let before = strings(&db, "SELECT count(*) FROM User");
-    let failed = db.execute("INSERT INTO User (name) VALUES ('zed'); INSERT INTO User (name) VALUES ('ada')");
+    let failed = db
+        .execute("INSERT INTO User (name) VALUES ('zed'); INSERT INTO User (name) VALUES ('ada')");
     assert!(failed.is_err());
     assert_eq!(strings(&db, "SELECT count(*) FROM User"), before);
 
-    let r = db.execute("INSERT INTO User (name) VALUES ('new') RETURNING _id, name, joined").unwrap();
-    assert!(matches!(r.rows[0][2], Value::Int(t) if t > 1_600_000_000_000), "default now() applied");
-    let r = db.execute("DELETE e FROM (a)-[e:FOLLOWS]->(b) RETURNING e.since").unwrap();
+    let r = db
+        .execute("INSERT INTO User (name) VALUES ('new') RETURNING _id, name, joined")
+        .unwrap();
+    assert!(
+        matches!(r.rows[0][2], Value::Int(t) if t > 1_600_000_000_000),
+        "default now() applied"
+    );
+    let r = db
+        .execute("DELETE e FROM (a)-[e:FOLLOWS]->(b) RETURNING e.since")
+        .unwrap();
     assert_eq!(r.stats.edges_deleted, 1);
 }
 
 #[test]
 fn ddl_evolution() {
     let db = db();
-    db.execute("ALTER NODE User ADD country STRING DEFAULT 'earth'").unwrap();
+    db.execute("ALTER NODE User ADD country STRING DEFAULT 'earth'")
+        .unwrap();
     assert_eq!(strings(&db, "SELECT DISTINCT country FROM User"), ["earth"]);
     db.execute("ALTER NODE User DROP country").unwrap();
     assert!(db.execute("SELECT country FROM User").is_err());
-    assert!(db.execute("DROP NODE Post").unwrap_err().to_string().contains("WROTE"));
-    db.execute("DROP EDGE WROTE CASCADE; DROP NODE Post CASCADE").unwrap();
+    assert!(
+        db.execute("DROP NODE Post")
+            .unwrap_err()
+            .to_string()
+            .contains("WROTE")
+    );
+    db.execute("DROP EDGE WROTE CASCADE; DROP NODE Post CASCADE")
+        .unwrap();
     assert!(db.execute("SELECT * FROM Post").is_err());
     db.execute("CREATE INDEX ON User(bio)").unwrap();
     assert!(db.execute("CREATE UNIQUE INDEX ON User(age)").is_ok());
-    db.execute("INSERT INTO User (name, age) VALUES ('dup', 99)").unwrap();
-    assert!(db.execute("INSERT INTO User (name, age) VALUES ('dup2', 99)").is_err());
+    db.execute("INSERT INTO User (name, age) VALUES ('dup', 99)")
+        .unwrap();
+    assert!(
+        db.execute("INSERT INTO User (name, age) VALUES ('dup2', 99)")
+            .is_err()
+    );
     assert!(db.schema_ddl().contains("CREATE NODE User"));
 }
 
@@ -176,15 +309,27 @@ fn stored_queries() {
         .unwrap();
     let mut p = Params::new();
     p.insert("name".into(), "grace".into());
-    assert_eq!(db.call("followers", &p).unwrap().rows, vec![vec![Value::from("linus")]]);
+    assert_eq!(
+        db.call("followers", &p).unwrap().rows,
+        vec![vec![Value::from("linus")]]
+    );
     assert_eq!(strings(&db, "CALL followers('alan')"), ["grace"]);
-    assert!(db.execute("CREATE QUERY bad($x INT) AS SELECT nope FROM User").is_err());
-    assert!(db.execute("CREATE QUERY bad2() AS SELECT name FROM User WHERE age = $undeclared").is_err());
+    assert!(
+        db.execute("CREATE QUERY bad($x INT) AS SELECT nope FROM User")
+            .is_err()
+    );
+    assert!(
+        db.execute("CREATE QUERY bad2() AS SELECT name FROM User WHERE age = $undeclared")
+            .is_err()
+    );
     db.execute("CREATE QUERY birthday($name STRING) AS UPDATE User SET age = age + 1 WHERE name = $name RETURNING age")
         .unwrap();
     assert_eq!(strings(&db, "CALL birthday('ada')"), ["37"]);
     // Validation ran in a rolled-back savepoint: the dummy call changed nothing.
-    assert_eq!(strings(&db, "SELECT age FROM User WHERE name = 'ada'"), ["37"]);
+    assert_eq!(
+        strings(&db, "SELECT age FROM User WHERE name = 'ada'"),
+        ["37"]
+    );
 }
 
 #[test]
@@ -194,20 +339,39 @@ fn durability_across_restarts() {
         let db = Database::open(dir.path()).unwrap();
         db.execute("CREATE NODE Item (sku STRING UNIQUE, emb VECTOR(2)); CREATE EDGE NEXT FROM Item TO Item")
             .unwrap();
-        db.execute("INSERT (:Item {sku: 'a', emb: [1, 0]})-[:NEXT]->(:Item {sku: 'b', emb: [0, 1]})").unwrap();
+        db.execute(
+            "INSERT (:Item {sku: 'a', emb: [1, 0]})-[:NEXT]->(:Item {sku: 'b', emb: [0, 1]})",
+        )
+        .unwrap();
         assert!(matches!(Database::open(dir.path()), Err(Error::Locked(_))));
     }
     {
         let db = Database::open(dir.path()).unwrap();
-        assert_eq!(strings(&db, "SELECT b.sku FROM (a:Item {sku: 'a'})-[:NEXT]->(b)"), ["b"]);
-        db.execute("UPDATE Item SET sku = 'c' WHERE sku = 'b'").unwrap();
+        assert_eq!(
+            strings(&db, "SELECT b.sku FROM (a:Item {sku: 'a'})-[:NEXT]->(b)"),
+            ["b"]
+        );
+        db.execute("UPDATE Item SET sku = 'c' WHERE sku = 'b'")
+            .unwrap();
         db.snapshot().unwrap();
         db.execute("INSERT INTO Item (sku) VALUES ('d')").unwrap();
     }
     let db = Database::open(dir.path()).unwrap();
-    assert_eq!(strings(&db, "SELECT sku FROM Item ORDER BY sku"), ["a", "c", "d"]);
-    assert_eq!(strings(&db, "SELECT sku FROM Item ORDER BY similarity(emb, [0, 1]) DESC LIMIT 1"), ["c"]);
-    assert!(db.execute("INSERT INTO Item (sku) VALUES ('a')").is_err(), "unique index rebuilt on load");
+    assert_eq!(
+        strings(&db, "SELECT sku FROM Item ORDER BY sku"),
+        ["a", "c", "d"]
+    );
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT sku FROM Item ORDER BY similarity(emb, [0, 1]) DESC LIMIT 1"
+        ),
+        ["c"]
+    );
+    assert!(
+        db.execute("INSERT INTO Item (sku) VALUES ('a')").is_err(),
+        "unique index rebuilt on load"
+    );
 }
 
 #[test]
@@ -216,7 +380,8 @@ fn torn_wal_tail_is_ignored() {
     let dir = tempfile::tempdir().unwrap();
     {
         let db = Database::open(dir.path()).unwrap();
-        db.execute("CREATE NODE T (v INT); INSERT INTO T (v) VALUES (1)").unwrap();
+        db.execute("CREATE NODE T (v INT); INSERT INTO T (v) VALUES (1)")
+            .unwrap();
     }
     // Simulate a crash mid-append. (The previous handle snapshotted on drop,
     // so write a fresh record and then garbage after it.)
@@ -225,7 +390,10 @@ fn torn_wal_tail_is_ignored() {
         db.execute("INSERT INTO T (v) VALUES (2)").unwrap();
         std::mem::forget(db); // no clean-shutdown snapshot
     }
-    let mut f = std::fs::OpenOptions::new().append(true).open(dir.path().join("wal.rtk")).unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.path().join("wal.rtk"))
+        .unwrap();
     f.write_all(&[200, 0, 0, 0, 1, 2, 3]).unwrap();
     drop(f);
     // The forgotten handle still holds the lock in this process; release by

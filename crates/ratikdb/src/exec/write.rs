@@ -23,12 +23,19 @@ use super::{QueryResult, Txn};
 
 /// Checks and orders a set of property values for a new element, applying
 /// defaults and NOT NULL constraints.
-pub(crate) fn build_props(def: &TypeDef, given: Vec<(String, Value)>, now: i64) -> Result<Vec<Value>> {
+pub(crate) fn build_props(
+    def: &TypeDef,
+    given: Vec<(String, Value)>,
+    now: i64,
+) -> Result<Vec<Value>> {
     let mut slots: Vec<Option<Value>> = vec![None; def.props.len()];
     for (name, v) in given {
         let (slot, p) = def.prop(&name)?;
         if slots[slot].is_some() {
-            return Err(Error::query(format!("{}.{name} is given more than once", def.name)));
+            return Err(Error::query(format!(
+                "{}.{name} is given more than once",
+                def.name
+            )));
         }
         slots[slot] = Some(p.ty.coerce(v, &format!("{}.{name}", def.name))?);
     }
@@ -43,7 +50,10 @@ pub(crate) fn build_props(def: &TypeDef, given: Vec<(String, Value)>, now: i64) 
                 (None, None) => Value::Null,
             };
             if p.not_null && v.is_null() {
-                return Err(Error::constraint(format!("{}.{} is NOT NULL, but no value was given", def.name, p.name)));
+                return Err(Error::constraint(format!(
+                    "{}.{} is NOT NULL, but no value was given",
+                    def.name, p.name
+                )));
             }
             Ok(v)
         })
@@ -67,13 +77,26 @@ fn returning(
         .iter()
         .map(|row| {
             let env = Env::new(g, row, now);
-            proj.exprs.iter().map(|e| eval(e, &env).map(|v| g.materialize(v))).collect::<Result<Vec<_>>>()
+            proj.exprs
+                .iter()
+                .map(|e| eval(e, &env).map(|v| g.materialize(v)))
+                .collect::<Result<Vec<_>>>()
         })
         .collect::<Result<_>>()?;
-    Ok(QueryResult { columns: proj.names, rows, ..QueryResult::default() })
+    Ok(QueryResult {
+        columns: proj.names,
+        rows,
+        ..QueryResult::default()
+    })
 }
 
-fn check_endpoints(def: &TypeDef, g: &Graph, new_types: &FxHashMap<ElementId, TypeId>, from: ElementId, to: ElementId) -> Result<()> {
+fn check_endpoints(
+    def: &TypeDef,
+    g: &Graph,
+    new_types: &FxHashMap<ElementId, TypeId>,
+    from: ElementId,
+    to: ElementId,
+) -> Result<()> {
     let name_of = |id: ElementId| {
         g.type_of(id)
             .or_else(|| new_types.get(&id).copied())
@@ -94,11 +117,26 @@ fn check_endpoints(def: &TypeDef, g: &Graph, new_types: &FxHashMap<ElementId, Ty
 }
 
 enum Create {
-    Node { var: usize, ty: TypeId, props: Vec<(String, CExpr)> },
-    Edge { var: usize, ty: TypeId, from: usize, to: usize, props: Vec<(String, CExpr)> },
+    Node {
+        var: usize,
+        ty: TypeId,
+        props: Vec<(String, CExpr)>,
+    },
+    Edge {
+        var: usize,
+        ty: TypeId,
+        from: usize,
+        to: usize,
+        props: Vec<(String, CExpr)>,
+    },
 }
 
-pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64) -> Result<QueryResult> {
+pub(crate) fn insert(
+    txn: &mut Txn<'_>,
+    params: &Params,
+    ins: &Insert,
+    now: i64,
+) -> Result<QueryResult> {
     let g: &Graph = txn.g;
     let m = bind_where(g, params, &ins.from, ins.where_.as_ref())?;
     let base_width = m.scope.vars.len();
@@ -106,19 +144,28 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
     let mut creates = Vec::new();
     let mut c = Compiler::new(g, params, &m.scope);
     let compile_props = |c: &mut Compiler<'_>, props: &[(String, Expr)]| {
-        props.iter().map(|(k, e)| Ok((k.clone(), c.compile(e)?))).collect::<Result<Vec<_>>>()
+        props
+            .iter()
+            .map(|(k, e)| Ok((k.clone(), c.compile(e)?)))
+            .collect::<Result<Vec<_>>>()
     };
     for p in &ins.create {
         let mut vars = Vec::with_capacity(p.nodes.len());
         for n in &p.nodes {
             if let Some(v) = n.var.as_deref().and_then(|v| scope.lookup(v)) {
                 let VarKind::Node(types) = &scope.vars[v].kind else {
-                    return Err(Error::query(format!("'{}' is an edge, not a node", scope.vars[v].name)));
+                    return Err(Error::query(format!(
+                        "'{}' is an edge, not a node",
+                        scope.vars[v].name
+                    )));
                 };
                 if let Some(l) = &n.label {
                     let ty = g.schema.resolve(l, Kind::Node)?.id;
                     if !types.contains(&ty) {
-                        return Err(Error::query(format!("'{}' is already bound to a different type", scope.vars[v].name)));
+                        return Err(Error::query(format!(
+                            "'{}' is already bound to a different type",
+                            scope.vars[v].name
+                        )));
                     }
                 }
                 if !n.props.is_empty() {
@@ -131,7 +178,10 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
                 continue;
             }
             let Some(label) = &n.label else {
-                let what = n.var.as_deref().map_or_else(|| "()".to_owned(), |v| format!("({v})"));
+                let what = n
+                    .var
+                    .as_deref()
+                    .map_or_else(|| "()".to_owned(), |v| format!("({v})"));
                 return Err(Error::query(format!(
                     "{what} is not bound by FROM — give it a label like {}:User {{...}}) to create a new node",
                     what.trim_end_matches(')')
@@ -139,12 +189,18 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
             };
             let ty = g.schema.resolve(label, Kind::Node)?.id;
             let var = scope.add(n.var.as_deref(), VarKind::Node(vec![ty]));
-            creates.push(Create::Node { var, ty, props: compile_props(&mut c, &n.props)? });
+            creates.push(Create::Node {
+                var,
+                ty,
+                props: compile_props(&mut c, &n.props)?,
+            });
             vars.push(var);
         }
         for (i, r) in p.rels.iter().enumerate() {
             let [label] = r.labels.as_slice() else {
-                return Err(Error::query("a new edge needs exactly one type, like -[:FOLLOWS]->"));
+                return Err(Error::query(
+                    "a new edge needs exactly one type, like -[:FOLLOWS]->",
+                ));
             };
             if r.hops.is_some() {
                 return Err(Error::query("cannot create a variable-length edge"));
@@ -153,13 +209,26 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
             let (from, to) = match r.dir {
                 Dir::Out => (vars[i], vars[i + 1]),
                 Dir::In => (vars[i + 1], vars[i]),
-                Dir::Both => return Err(Error::query("a new edge needs a direction: -[:T]-> or <-[:T]-")),
+                Dir::Both => {
+                    return Err(Error::query(
+                        "a new edge needs a direction: -[:T]-> or <-[:T]-",
+                    ));
+                }
             };
             if r.var.as_deref().is_some_and(|v| scope.lookup(v).is_some()) {
-                return Err(Error::query(format!("edge variable '{}' is already in use", r.var.as_deref().unwrap_or_default())));
+                return Err(Error::query(format!(
+                    "edge variable '{}' is already in use",
+                    r.var.as_deref().unwrap_or_default()
+                )));
             }
             let var = scope.add(r.var.as_deref(), VarKind::Edge(vec![ty]));
-            creates.push(Create::Edge { var, ty, from, to, props: compile_props(&mut c, &r.props)? });
+            creates.push(Create::Edge {
+                var,
+                ty,
+                from,
+                to,
+                props: compile_props(&mut c, &r.props)?,
+            });
         }
     }
 
@@ -183,11 +252,19 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
         row.resize(scope.vars.len(), Value::Null);
         for create in &creates {
             let (var, ty, props) = match create {
-                Create::Node { var, ty, props } | Create::Edge { var, ty, props, .. } => (var, ty, props),
+                Create::Node { var, ty, props } | Create::Edge { var, ty, props, .. } => {
+                    (var, ty, props)
+                }
             };
             let env = Env::new(g, &row, now);
-            let given = props.iter().map(|(k, e)| Ok((k.clone(), eval(e, &env)?))).collect::<Result<Vec<_>>>()?;
-            let def = g.schema.get(*ty).ok_or_else(|| Error::schema("type vanished"))?;
+            let given = props
+                .iter()
+                .map(|(k, e)| Ok((k.clone(), eval(e, &env)?)))
+                .collect::<Result<Vec<_>>>()?;
+            let def = g
+                .schema
+                .get(*ty)
+                .ok_or_else(|| Error::schema("type vanished"))?;
             let props = build_props(def, given, now)?;
             let id = next_id;
             next_id += 1;
@@ -202,7 +279,13 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
                         return Err(Error::query("edge endpoints must be nodes"));
                     };
                     check_endpoints(def, g, &new_types, *f, *t)?;
-                    ops.push(Op::AddEdge { id, ty: *ty, from: *f, to: *t, props });
+                    ops.push(Op::AddEdge {
+                        id,
+                        ty: *ty,
+                        from: *f,
+                        to: *t,
+                        props,
+                    });
                     row[*var] = Value::Edge(id);
                 }
             }
@@ -218,7 +301,12 @@ pub(crate) fn insert(txn: &mut Txn<'_>, params: &Params, ins: &Insert, now: i64)
     returning(txn.g, params, &scope, &ins.returning, &rows, now)
 }
 
-pub(crate) fn insert_rows(txn: &mut Txn<'_>, params: &Params, ins: &InsertRows, now: i64) -> Result<QueryResult> {
+pub(crate) fn insert_rows(
+    txn: &mut Txn<'_>,
+    params: &Params,
+    ins: &InsertRows,
+    now: i64,
+) -> Result<QueryResult> {
     let g: &Graph = txn.g;
     let def = g.schema.resolve(&ins.label, Kind::Node)?;
     let empty = Scope::default();
@@ -232,7 +320,11 @@ pub(crate) fn insert_rows(txn: &mut Txn<'_>, params: &Params, ins: &InsertRows, 
             .map(|(k, e)| Ok((k.clone(), eval(&c.compile(e)?, &env)?)))
             .collect::<Result<Vec<_>>>()?;
         let id = g.next_id + offset as u64;
-        ops.push(Op::AddNode { id, ty: def.id, props: build_props(def, given, now)? });
+        ops.push(Op::AddNode {
+            id,
+            ty: def.id,
+            props: build_props(def, given, now)?,
+        });
         rows.push(vec![Value::Node(id)]);
     }
     let mut scope = Scope::default();
@@ -243,7 +335,12 @@ pub(crate) fn insert_rows(txn: &mut Txn<'_>, params: &Params, ins: &InsertRows, 
     returning(txn.g, params, &scope, &ins.returning, &rows, now)
 }
 
-pub(crate) fn update(txn: &mut Txn<'_>, params: &Params, up: &Update, now: i64) -> Result<QueryResult> {
+pub(crate) fn update(
+    txn: &mut Txn<'_>,
+    params: &Params,
+    up: &Update,
+    now: i64,
+) -> Result<QueryResult> {
     let g: &Graph = txn.g;
     let m = bind_where(g, params, &up.from, up.where_.as_ref())?;
     let mut c = Compiler::new(g, params, &m.scope);
@@ -254,13 +351,18 @@ pub(crate) fn update(txn: &mut Txn<'_>, params: &Params, up: &Update, now: i64) 
         }
         let target = match var {
             Some(v) => {
-                let i = m.scope.lookup(v).ok_or_else(|| Error::query(format!("unknown variable '{v}'")))?;
+                let i = m
+                    .scope
+                    .lookup(v)
+                    .ok_or_else(|| Error::query(format!("unknown variable '{v}'")))?;
                 c.prop(i, prop)?
             }
             None => c.compile(&Expr::Ident(prop.clone()))?,
         };
         let CExpr::Prop { var, .. } = target else {
-            return Err(Error::query(format!("cannot SET '{prop}': it is not a property")));
+            return Err(Error::query(format!(
+                "cannot SET '{prop}': it is not a property"
+            )));
         };
         sets.push((var, prop.clone(), c.compile(e)?));
     }
@@ -280,16 +382,25 @@ pub(crate) fn update(txn: &mut Txn<'_>, params: &Params, up: &Update, now: i64) 
         let env = Env::new(g, &row, now);
         let mut fresh = sets.is_empty();
         for (var, prop, e) in &sets {
-            let (Value::Node(id) | Value::Edge(id)) = row[*var] else { continue };
-            let def = g.type_of(id).and_then(|t| g.schema.get(t)).ok_or_else(|| Error::NotFound(format!("element {id}")))?;
+            let (Value::Node(id) | Value::Edge(id)) = row[*var] else {
+                continue;
+            };
+            let def = g
+                .type_of(id)
+                .and_then(|t| g.schema.get(t))
+                .ok_or_else(|| Error::NotFound(format!("element {id}")))?;
             let (slot, p) = def.prop(prop)?;
             if !touched.insert((id, slot)) {
                 continue;
             }
             fresh = true;
-            let value = p.ty.coerce(eval(e, &env)?, &format!("{}.{prop}", def.name))?;
+            let value =
+                p.ty.coerce(eval(e, &env)?, &format!("{}.{prop}", def.name))?;
             if p.not_null && value.is_null() {
-                return Err(Error::constraint(format!("{}.{prop} is NOT NULL", def.name)));
+                return Err(Error::constraint(format!(
+                    "{}.{prop} is NOT NULL",
+                    def.name
+                )));
             }
             ops.push(Op::SetProp { id, slot, value });
         }
@@ -304,7 +415,12 @@ pub(crate) fn update(txn: &mut Txn<'_>, params: &Params, up: &Update, now: i64) 
     returning(txn.g, params, &m.scope, &up.returning, &rows, now)
 }
 
-pub(crate) fn delete(txn: &mut Txn<'_>, params: &Params, del: &Delete, now: i64) -> Result<QueryResult> {
+pub(crate) fn delete(
+    txn: &mut Txn<'_>,
+    params: &Params,
+    del: &Delete,
+    now: i64,
+) -> Result<QueryResult> {
     let g: &Graph = txn.g;
     let m = bind_where(g, params, &del.from, del.where_.as_ref())?;
     let targets: Vec<usize> = if del.targets.is_empty() {
@@ -312,12 +428,20 @@ pub(crate) fn delete(txn: &mut Txn<'_>, params: &Params, del: &Delete, now: i64)
         match named.as_slice() {
             [one] => vec![*one],
             [] if m.scope.vars.len() == 1 => vec![0],
-            _ => return Err(Error::query("say which variables to delete, e.g. DELETE u, e FROM ...")),
+            _ => {
+                return Err(Error::query(
+                    "say which variables to delete, e.g. DELETE u, e FROM ...",
+                ));
+            }
         }
     } else {
         del.targets
             .iter()
-            .map(|t| m.scope.lookup(t).ok_or_else(|| Error::query(format!("unknown variable '{t}'"))))
+            .map(|t| {
+                m.scope
+                    .lookup(t)
+                    .ok_or_else(|| Error::query(format!("unknown variable '{t}'")))
+            })
             .collect::<Result<_>>()?
     };
     let width = m.scope.vars.len();
@@ -393,7 +517,12 @@ pub(crate) fn call_params(
 ) -> Result<Params> {
     if args.len() != declared.len() {
         let sig: Vec<String> = declared.iter().map(|(n, t)| format!("${n} {t}")).collect();
-        return Err(Error::query(format!("{name}({}) takes {} argument(s), got {}", sig.join(", "), declared.len(), args.len())));
+        return Err(Error::query(format!(
+            "{name}({}) takes {} argument(s), got {}",
+            sig.join(", "),
+            declared.len(),
+            args.len()
+        )));
     }
     let empty = Scope::default();
     let mut c = Compiler::new(g, outer, &empty);
@@ -401,18 +530,30 @@ pub(crate) fn call_params(
     declared
         .iter()
         .zip(args)
-        .map(|((n, ty), e)| Ok((n.clone(), ty.coerce(eval(&c.compile(e)?, &env)?, &format!("${n}"))?)))
+        .map(|((n, ty), e)| {
+            Ok((
+                n.clone(),
+                ty.coerce(eval(&c.compile(e)?, &env)?, &format!("${n}"))?,
+            ))
+        })
         .collect()
 }
 
 /// Checks named parameters against a stored query's declaration.
-pub(crate) fn check_params(declared: &[(String, crate::schema::PropType)], given: &Params, name: &str) -> Result<Params> {
+pub(crate) fn check_params(
+    declared: &[(String, crate::schema::PropType)],
+    given: &Params,
+    name: &str,
+) -> Result<Params> {
     let mut out = BTreeMap::new();
     for (n, ty) in declared {
         let v = given.get(n).cloned().unwrap_or_default();
         out.insert(n.clone(), ty.coerce(v, &format!("{name}(${n})"))?);
     }
-    if let Some(extra) = given.keys().find(|k| !declared.iter().any(|(n, _)| n == *k)) {
+    if let Some(extra) = given
+        .keys()
+        .find(|k| !declared.iter().any(|(n, _)| n == *k))
+    {
         return Err(Error::query(format!("{name}() has no parameter ${extra}")));
     }
     Ok(out.into_iter().collect())

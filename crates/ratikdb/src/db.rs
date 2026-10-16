@@ -23,7 +23,10 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { sync: SyncMode::Always, snapshot_after_bytes: 64 * 1024 * 1024 }
+        Self {
+            sync: SyncMode::Always,
+            snapshot_after_bytes: 64 * 1024 * 1024,
+        }
     }
 }
 
@@ -76,7 +79,14 @@ impl Database {
     /// A database that lives only in memory.
     #[must_use]
     pub fn in_memory() -> Self {
-        Self { engine: RwLock::new(Engine { graph: Graph::default(), wal: None, options: Options::default() }), path: None }
+        Self {
+            engine: RwLock::new(Engine {
+                graph: Graph::default(),
+                wal: None,
+                options: Options::default(),
+            }),
+            path: None,
+        }
     }
 
     /// Opens (or creates) a durable database in `dir`.
@@ -95,7 +105,14 @@ impl Database {
     pub fn open_with(dir: impl AsRef<Path>, options: Options) -> Result<Self> {
         let dir = dir.as_ref();
         let (graph, wal) = Wal::open(dir, options.sync)?;
-        Ok(Self { engine: RwLock::new(Engine { graph, wal: Some(wal), options }), path: Some(dir.to_path_buf()) })
+        Ok(Self {
+            engine: RwLock::new(Engine {
+                graph,
+                wal: Some(wal),
+                options,
+            }),
+            path: Some(dir.to_path_buf()),
+        })
     }
 
     /// Directory backing this database (`None` when in memory).

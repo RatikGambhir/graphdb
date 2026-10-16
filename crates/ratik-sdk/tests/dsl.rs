@@ -14,12 +14,20 @@ fn setup() -> Ratik {
     let db = Ratik::memory();
     db.define_all([
         node("User")
-            .string("name").required().unique()
-            .int("age").indexed()
+            .string("name")
+            .required()
+            .unique()
+            .int("age")
+            .indexed()
             .text("bio")
             .vector("taste", 2)
-            .timestamp("joined").default_now(),
-        node("Post").string("title").required().int("likes").default(0),
+            .timestamp("joined")
+            .default_now(),
+        node("Post")
+            .string("title")
+            .required()
+            .int("likes")
+            .default(0),
         edge("FOLLOWS").from("User").to("User").int("since"),
         edge("WROTE").from("User").to("Post"),
     ])
@@ -30,9 +38,27 @@ fn setup() -> Ratik {
 #[test]
 fn reads_like_a_sentence() -> ratik::Result<()> {
     let db = setup();
-    let ada = db.create("User").set("name", "Ada").set("age", 36).set("bio", "poetical science").set("taste", [1.0, 0.0]).run()?;
-    let alan = db.create("User").set("name", "Alan").set("age", 41).set("bio", "computable numbers").set("taste", [0.0, 1.0]).run()?;
-    let grace = db.create("User").from(User { name: "Grace".into(), age: Some(45) }).run()?;
+    let ada = db
+        .create("User")
+        .set("name", "Ada")
+        .set("age", 36)
+        .set("bio", "poetical science")
+        .set("taste", [1.0, 0.0])
+        .run()?;
+    let alan = db
+        .create("User")
+        .set("name", "Alan")
+        .set("age", 41)
+        .set("bio", "computable numbers")
+        .set("taste", [0.0, 1.0])
+        .run()?;
+    let grace = db
+        .create("User")
+        .from(User {
+            name: "Grace".into(),
+            age: Some(45),
+        })
+        .run()?;
     assert_eq!(ada.label, "User");
     assert!(ada.get::<i64>("joined")? > 0, "default now() filled in");
 
@@ -40,35 +66,82 @@ fn reads_like_a_sentence() -> ratik::Result<()> {
     db.link(&alan, "FOLLOWS", &grace).set("since", 2023).run()?;
 
     // Find & traverse.
-    let follows = db.find("User").with("name", "Ada").outgoing("FOLLOWS").all()?;
+    let follows = db
+        .find("User")
+        .with("name", "Ada")
+        .outgoing("FOLLOWS")
+        .all()?;
     assert_eq!(follows.len(), 1);
     assert_eq!(follows[0].get::<String>("name")?, "Alan");
 
-    let reach: Vec<String> =
-        db.find("User").with("name", "Ada").outgoing("FOLLOWS").hops(1..=3).order_by("name").pluck("name")?;
+    let reach: Vec<String> = db
+        .find("User")
+        .with("name", "Ada")
+        .outgoing("FOLLOWS")
+        .hops(1..=3)
+        .order_by("name")
+        .pluck("name")?;
     assert_eq!(reach, ["Alan", "Grace"]);
 
-    let recent = db.find("User").outgoing("FOLLOWS").where_edge(prop("since").gte(2021)).pluck::<String>("name")?;
+    let recent = db
+        .find("User")
+        .outgoing("FOLLOWS")
+        .where_edge(prop("since").gte(2021))
+        .pluck::<String>("name")?;
     assert_eq!(recent, ["Grace"]);
 
-    let followers_of_alan = db.find("User").with("name", "Alan").incoming("FOLLOWS").one()?;
+    let followers_of_alan = db
+        .find("User")
+        .with("name", "Alan")
+        .incoming("FOLLOWS")
+        .one()?;
     assert_eq!(followers_of_alan.id, ada.id);
 
     // Conditions compose with & | !
-    let n = db.find("User").filter(prop("age").gt(40) & !prop("name").starts_with("G")).count()?;
+    let n = db
+        .find("User")
+        .filter(prop("age").gt(40) & !prop("name").starts_with("G"))
+        .count()?;
     assert_eq!(n, 1);
-    let typed: Vec<User> = db.find("User").filter(prop("age").between(30, 42)).order_by_desc("age").all_as()?;
-    assert_eq!(typed, [User { name: "Alan".into(), age: Some(41) }, User { name: "Ada".into(), age: Some(36) }]);
+    let typed: Vec<User> = db
+        .find("User")
+        .filter(prop("age").between(30, 42))
+        .order_by_desc("age")
+        .all_as()?;
+    assert_eq!(
+        typed,
+        [
+            User {
+                name: "Alan".into(),
+                age: Some(41)
+            },
+            User {
+                name: "Ada".into(),
+                age: Some(36)
+            }
+        ]
+    );
 
     // Vectors and full-text.
-    let closest = db.find("User").nearest("taste", [0.9, 0.1]).limit(1).one()?;
+    let closest = db
+        .find("User")
+        .nearest("taste", [0.9, 0.1])
+        .limit(1)
+        .one()?;
     assert_eq!(closest.id, ada.id);
     let hits: Vec<String> = db.find("User").search("bio", "numbers").pluck("name")?;
     assert_eq!(hits, ["Alan"]);
 
     // Edges.
-    let edges = db.find("User").with("name", "Ada").outgoing("FOLLOWS").edges()?;
-    assert_eq!((edges[0].from, edges[0].to, edges[0].get::<i64>("since")?), (ada.id, alan.id, 2020));
+    let edges = db
+        .find("User")
+        .with("name", "Ada")
+        .outgoing("FOLLOWS")
+        .edges()?;
+    assert_eq!(
+        (edges[0].from, edges[0].to, edges[0].get::<i64>("since")?),
+        (ada.id, alan.id, 2020)
+    );
     Ok(())
 }
 
@@ -77,20 +150,52 @@ fn updates_deletes_and_batches() -> ratik::Result<()> {
     let db = setup();
     let users = db.create_many(
         "User",
-        [User { name: "a".into(), age: Some(1) }, User { name: "b".into(), age: Some(2) }, User { name: "c".into(), age: None }],
+        [
+            User {
+                name: "a".into(),
+                age: Some(1),
+            },
+            User {
+                name: "b".into(),
+                age: Some(2),
+            },
+            User {
+                name: "c".into(),
+                age: None,
+            },
+        ],
     )?;
     assert_eq!(users.len(), 3);
 
-    let updated = db.find("User").filter(prop("age").exists()).update().increment("age", 10).run()?;
+    let updated = db
+        .find("User")
+        .filter(prop("age").exists())
+        .update()
+        .increment("age", 10)
+        .run()?;
     assert_eq!(updated.len(), 2);
-    assert_eq!(db.find("User").with("name", "b").one()?.get::<i64>("age")?, 12);
+    assert_eq!(
+        db.find("User").with("name", "b").one()?.get::<i64>("age")?,
+        12
+    );
 
     // The same node reached twice is updated once.
     db.link(&users[0], "FOLLOWS", &users[2]).run()?;
     db.link(&users[1], "FOLLOWS", &users[2]).run()?;
-    db.find("User").outgoing("FOLLOWS").update().set("age", 100).run()?;
-    db.find("User").outgoing("FOLLOWS").update().increment("age", 1).run()?;
-    assert_eq!(db.find("User").with("name", "c").one()?.get::<i64>("age")?, 101);
+    db.find("User")
+        .outgoing("FOLLOWS")
+        .update()
+        .set("age", 100)
+        .run()?;
+    db.find("User")
+        .outgoing("FOLLOWS")
+        .update()
+        .increment("age", 1)
+        .run()?;
+    assert_eq!(
+        db.find("User").with("name", "c").one()?.get::<i64>("age")?,
+        101
+    );
 
     assert_eq!(db.unlink(&users[0], "FOLLOWS", &users[2])?, 1);
     assert_eq!(db.find("User").filter(prop("age").lt(50)).delete()?, 2);
@@ -114,7 +219,13 @@ fn rql_and_stored_queries() -> ratik::Result<()> {
 
     db.execute("CREATE QUERY by_name($name STRING) AS SELECT u FROM User u WHERE u.name = $name")?;
     let found: Option<User> = db.call("by_name").bind("name", "x").first_as()?;
-    assert_eq!(found, Some(User { name: "x".into(), age: Some(5) }));
+    assert_eq!(
+        found,
+        Some(User {
+            name: "x".into(),
+            age: Some(5)
+        })
+    );
     assert!(db.schema()?.contains("CREATE EDGE WROTE FROM User TO Post"));
     Ok(())
 }

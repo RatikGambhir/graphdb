@@ -39,7 +39,11 @@ pub(crate) struct CPattern {
 pub(crate) type InlineProps = Vec<(usize, String, Expr)>;
 
 fn type_names(g: &Graph, types: &[TypeId]) -> String {
-    let names: Vec<&str> = types.iter().filter_map(|t| g.schema.get(*t)).map(|d| d.name.as_str()).collect();
+    let names: Vec<&str> = types
+        .iter()
+        .filter_map(|t| g.schema.get(*t))
+        .map(|d| d.name.as_str())
+        .collect();
     names.join(" | ")
 }
 
@@ -58,14 +62,20 @@ pub(crate) fn bind_patterns(
         let mut nodes = Vec::with_capacity(p.nodes.len());
         let mut explicit = Vec::with_capacity(p.nodes.len());
         for n in &p.nodes {
-            let label = n.label.as_deref().map(|l| g.schema.resolve(l, Kind::Node).map(|d| d.id)).transpose()?;
+            let label = n
+                .label
+                .as_deref()
+                .map(|l| g.schema.resolve(l, Kind::Node).map(|d| d.id))
+                .transpose()?;
             explicit.push(label.is_some());
             let existing = n.var.as_deref().and_then(|v| scope.lookup(v));
             let var = match existing {
                 Some(v) => {
                     let var_name = scope.vars[v].name.clone();
                     let VarKind::Node(types) = &mut scope.vars[v].kind else {
-                        return Err(Error::query(format!("'{var_name}' is an edge, but is used as a node here")));
+                        return Err(Error::query(format!(
+                            "'{var_name}' is an edge, but is used as a node here"
+                        )));
                     };
                     if let Some(l) = label {
                         if !types.contains(&l) {
@@ -80,7 +90,10 @@ pub(crate) fn bind_patterns(
                     }
                     v
                 }
-                None => scope.add(n.var.as_deref(), VarKind::Node(label.map_or_else(|| all_nodes.clone(), |l| vec![l]))),
+                None => scope.add(
+                    n.var.as_deref(),
+                    VarKind::Node(label.map_or_else(|| all_nodes.clone(), |l| vec![l])),
+                ),
             };
             inline.extend(n.props.iter().map(|(k, e)| (var, k.clone(), e.clone())));
             nodes.push(var);
@@ -90,7 +103,12 @@ pub(crate) fn bind_patterns(
             let types = if r.labels.is_empty() {
                 None
             } else {
-                Some(r.labels.iter().map(|l| g.schema.resolve(l, Kind::Edge).map(|d| d.id)).collect::<Result<Vec<_>>>()?)
+                Some(
+                    r.labels
+                        .iter()
+                        .map(|l| g.schema.resolve(l, Kind::Edge).map(|d| d.id))
+                        .collect::<Result<Vec<_>>>()?,
+                )
             };
             if r.hops.is_some() && (r.var.is_some() || !r.props.is_empty()) {
                 return Err(Error::query(
@@ -105,18 +123,28 @@ pub(crate) fn bind_patterns(
             let var = match r.var.as_deref().and_then(|v| scope.lookup(v)) {
                 Some(v) => {
                     if !matches!(scope.vars[v].kind, VarKind::Edge(_)) {
-                        return Err(Error::query(format!("'{}' is a node, but is used as an edge here", scope.vars[v].name)));
+                        return Err(Error::query(format!(
+                            "'{}' is a node, but is used as an edge here",
+                            scope.vars[v].name
+                        )));
                     }
                     v
                 }
                 None if r.hops.is_some() => scope.add(None, VarKind::Path),
                 None => {
-                    let ts = types.clone().unwrap_or_else(|| g.schema.of_kind(Kind::Edge).map(|t| t.id).collect());
+                    let ts = types
+                        .clone()
+                        .unwrap_or_else(|| g.schema.of_kind(Kind::Edge).map(|t| t.id).collect());
                     scope.add(r.var.as_deref(), VarKind::Edge(ts))
                 }
             };
             inline.extend(r.props.iter().map(|(k, e)| (var, k.clone(), e.clone())));
-            rels.push(CRel { var, types, dir: r.dir, hops: r.hops });
+            rels.push(CRel {
+                var,
+                types,
+                dir: r.dir,
+                hops: r.hops,
+            });
         }
         // Endpoint inference: an edge type constrains the nodes it touches.
         for (i, rel) in rels.iter().enumerate() {
@@ -125,7 +153,12 @@ pub(crate) fn bind_patterns(
                 types
                     .iter()
                     .filter_map(|t| g.schema.get(*t))
-                    .flat_map(|d| pick(d).iter().filter_map(|n| g.schema.by_name(n).map(|t| t.id)).collect::<Vec<_>>())
+                    .flat_map(|d| {
+                        pick(d)
+                            .iter()
+                            .filter_map(|n| g.schema.by_name(n).map(|t| t.id))
+                            .collect::<Vec<_>>()
+                    })
                     .collect()
             };
             let (from, to) = (names(|d| &d.from), names(|d| &d.to));
@@ -137,15 +170,32 @@ pub(crate) fn bind_patterns(
             };
             for (node_idx, allowed, side) in [(i, left, "source"), (i + 1, right, "target")] {
                 let var = nodes[node_idx];
-                let VarKind::Node(current) = &mut scope.vars[var].kind else { continue };
-                let narrowed: Vec<TypeId> = current.iter().copied().filter(|t| allowed.contains(t)).collect();
+                let VarKind::Node(current) = &mut scope.vars[var].kind else {
+                    continue;
+                };
+                let narrowed: Vec<TypeId> = current
+                    .iter()
+                    .copied()
+                    .filter(|t| allowed.contains(t))
+                    .collect();
                 if narrowed.is_empty() {
                     let def = types.iter().filter_map(|t| g.schema.get(*t)).next();
                     let shape = def.map_or_else(String::new, |d| {
-                        format!("{} goes from {} to {}", d.name, d.from.join(" | "), d.to.join(" | "))
+                        format!(
+                            "{} goes from {} to {}",
+                            d.name,
+                            d.from.join(" | "),
+                            d.to.join(" | ")
+                        )
                     });
-                    let what = if explicit[node_idx] { type_names(g, current) } else { "this node".into() };
-                    return Err(Error::schema(format!("{shape}, so {what} cannot be the {side} of this edge")));
+                    let what = if explicit[node_idx] {
+                        type_names(g, current)
+                    } else {
+                        "this node".into()
+                    };
+                    return Err(Error::schema(format!(
+                        "{shape}, so {what} cannot be the {side} of this edge"
+                    )));
                 }
                 *current = narrowed;
             }
@@ -160,7 +210,11 @@ pub(crate) fn inline_conjuncts(c: &mut Compiler<'_>, inline: &InlineProps) -> Re
     inline
         .iter()
         .map(|(var, prop, e)| {
-            Ok(CExpr::Bin(BinOp::Eq, Box::new(c.prop(*var, prop)?), Box::new(c.compile(e)?)))
+            Ok(CExpr::Bin(
+                BinOp::Eq,
+                Box::new(c.prop(*var, prop)?),
+                Box::new(c.compile(e)?),
+            ))
         })
         .collect()
 }
@@ -177,17 +231,52 @@ pub(crate) struct VectorHint {
 pub(crate) enum Access {
     Scan,
     Ids(Vec<ElementId>),
-    Eq { prop: String, values: Vec<Value> },
-    Range { prop: String, lo: Bound<Value>, hi: Bound<Value> },
-    Text { prop: String, terms: Vec<String> },
-    Vector { prop: String, query: Vec<f32>, k: usize },
+    Eq {
+        prop: String,
+        values: Vec<Value>,
+    },
+    Range {
+        prop: String,
+        lo: Bound<Value>,
+        hi: Bound<Value>,
+    },
+    Text {
+        prop: String,
+        terms: Vec<String>,
+    },
+    Vector {
+        prop: String,
+        query: Vec<f32>,
+        k: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum Step {
-    Scan { var: usize, types: Vec<TypeId>, access: Access, estimate: usize },
-    EdgeScan { rel: usize, types: Vec<TypeId>, left: usize, right: usize, dir: Dir },
-    Expand { from: usize, to: usize, rel: usize, dir: Dir, types: Option<Vec<TypeId>>, to_types: Option<Vec<TypeId>>, to_bound: bool, rel_bound: bool, hops: Option<(u32, Option<u32>)> },
+    Scan {
+        var: usize,
+        types: Vec<TypeId>,
+        access: Access,
+        estimate: usize,
+    },
+    EdgeScan {
+        rel: usize,
+        types: Vec<TypeId>,
+        left: usize,
+        right: usize,
+        dir: Dir,
+    },
+    Expand {
+        from: usize,
+        to: usize,
+        rel: usize,
+        dir: Dir,
+        types: Option<Vec<TypeId>>,
+        to_types: Option<Vec<TypeId>>,
+        to_bound: bool,
+        rel_bound: bool,
+        hops: Option<(u32, Option<u32>)>,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -211,7 +300,11 @@ fn const_of(g: &Graph, e: &CExpr, now: i64) -> Option<Value> {
     if let CExpr::Const(v) = e {
         return Some(v.clone());
     }
-    if e.is_const() { eval(e, &Env::new(g, &[], now)).ok() } else { None }
+    if e.is_const() {
+        eval(e, &Env::new(g, &[], now)).ok()
+    } else {
+        None
+    }
 }
 
 fn prop_of(e: &CExpr, var: usize) -> Option<&str> {
@@ -242,7 +335,14 @@ fn choose_access(
         && h.var == var
         && types.iter().all(|t| g.idx.vector(*t, &h.prop).is_some())
     {
-        consider(Access::Vector { prop: h.prop.clone(), query: h.query.clone(), k: h.k }, h.k.min(scan_cost));
+        consider(
+            Access::Vector {
+                prop: h.prop.clone(),
+                query: h.query.clone(),
+                k: h.k,
+            },
+            h.k.min(scan_cost),
+        );
     }
     for c in conjuncts {
         match c {
@@ -264,7 +364,10 @@ fn choose_access(
                 if value.is_null() {
                     continue;
                 }
-                if let CExpr::Meta { var: v, meta: Meta::Id } = side
+                if let CExpr::Meta {
+                    var: v,
+                    meta: Meta::Id,
+                } = side
                     && *v == var
                     && op == BinOp::Eq
                     && let Value::Int(id) = value
@@ -272,14 +375,26 @@ fn choose_access(
                     consider(Access::Ids(vec![id as u64]), 1);
                     continue;
                 }
-                let Some(prop) = prop_of(side, var) else { continue };
+                let Some(prop) = prop_of(side, var) else {
+                    continue;
+                };
                 if !indexed(prop) {
                     continue;
                 }
                 let (lo, hi) = match op {
                     BinOp::Eq => {
-                        let cost = types.iter().filter_map(|t| g.idx.btree(*t, prop)).map(|i| i.eq(&value).count()).sum();
-                        consider(Access::Eq { prop: prop.to_owned(), values: vec![value] }, cost);
+                        let cost = types
+                            .iter()
+                            .filter_map(|t| g.idx.btree(*t, prop))
+                            .map(|i| i.eq(&value).count())
+                            .sum();
+                        consider(
+                            Access::Eq {
+                                prop: prop.to_owned(),
+                                values: vec![value],
+                            },
+                            cost,
+                        );
                         continue;
                     }
                     BinOp::Lt => (Bound::Unbounded, Bound::Excluded(value)),
@@ -288,20 +403,38 @@ fn choose_access(
                     _ => (Bound::Included(value), Bound::Unbounded),
                 };
                 let cost = range_cost(g, types, prop, &lo, &hi);
-                consider(Access::Range { prop: prop.to_owned(), lo, hi }, cost);
+                consider(
+                    Access::Range {
+                        prop: prop.to_owned(),
+                        lo,
+                        hi,
+                    },
+                    cost,
+                );
             }
             CExpr::Between(a, lo, hi, false) => {
-                let (Some(prop), Some(lo), Some(hi)) = (prop_of(a, var), const_of(g, lo, now), const_of(g, hi, now)) else {
+                let (Some(prop), Some(lo), Some(hi)) =
+                    (prop_of(a, var), const_of(g, lo, now), const_of(g, hi, now))
+                else {
                     continue;
                 };
                 if indexed(prop) && !lo.is_null() && !hi.is_null() {
                     let (lo, hi) = (Bound::Included(lo), Bound::Included(hi));
                     let cost = range_cost(g, types, prop, &lo, &hi);
-                    consider(Access::Range { prop: prop.to_owned(), lo, hi }, cost);
+                    consider(
+                        Access::Range {
+                            prop: prop.to_owned(),
+                            lo,
+                            hi,
+                        },
+                        cost,
+                    );
                 }
             }
             CExpr::In(a, list, false) => {
-                let (Some(prop), Some(Value::List(values))) = (prop_of(a, var), const_of(g, list, now)) else {
+                let (Some(prop), Some(Value::List(values))) =
+                    (prop_of(a, var), const_of(g, list, now))
+                else {
                     continue;
                 };
                 if indexed(prop) {
@@ -310,15 +443,33 @@ fn choose_access(
                         .filter_map(|t| g.idx.btree(*t, prop))
                         .map(|i| values.iter().map(|v| i.eq(v).count()).sum::<usize>())
                         .sum();
-                    consider(Access::Eq { prop: prop.to_owned(), values }, cost);
+                    consider(
+                        Access::Eq {
+                            prop: prop.to_owned(),
+                            values,
+                        },
+                        cost,
+                    );
                 }
             }
-            CExpr::Text { var: v, prop, terms, matches: true } if *v == var => {
-                if types.iter().all(|t| g.idx.text(*t, prop).is_some()) {
-                    let cost =
-                        types.iter().filter_map(|t| g.idx.text(*t, prop)).map(|i| i.candidates(terms).len()).sum();
-                    consider(Access::Text { prop: prop.clone(), terms: terms.clone() }, cost);
-                }
+            CExpr::Text {
+                var: v,
+                prop,
+                terms,
+                matches: true,
+            } if *v == var && types.iter().all(|t| g.idx.text(*t, prop).is_some()) => {
+                let cost = types
+                    .iter()
+                    .filter_map(|t| g.idx.text(*t, prop))
+                    .map(|i| i.candidates(terms).len())
+                    .sum();
+                consider(
+                    Access::Text {
+                        prop: prop.clone(),
+                        terms: terms.clone(),
+                    },
+                    cost,
+                );
             }
             _ => {}
         }
@@ -326,7 +477,13 @@ fn choose_access(
     best
 }
 
-fn range_cost(g: &Graph, types: &[TypeId], prop: &str, lo: &Bound<Value>, hi: &Bound<Value>) -> usize {
+fn range_cost(
+    g: &Graph,
+    types: &[TypeId],
+    prop: &str,
+    lo: &Bound<Value>,
+    hi: &Bound<Value>,
+) -> usize {
     types
         .iter()
         .filter_map(|t| g.idx.btree(*t, prop))
@@ -358,7 +515,8 @@ pub(crate) fn plan(
         } else {
             let mut best: Option<(usize, Access, usize)> = None;
             for (i, var) in p.nodes.iter().enumerate() {
-                let (access, cost) = choose_access(g, *var, &node_types(*var), &conjuncts, hint, now);
+                let (access, cost) =
+                    choose_access(g, *var, &node_types(*var), &conjuncts, hint, now);
                 if best.as_ref().is_none_or(|b| cost < b.2) {
                     best = Some((i, access, cost));
                 }
@@ -375,28 +533,75 @@ pub(crate) fn plan(
             });
             if let Some((ri, types, _)) = edge_start {
                 let r = &p.rels[ri];
-                steps.push(Step::EdgeScan { rel: r.var, types, left: p.nodes[ri], right: p.nodes[ri + 1], dir: r.dir });
+                steps.push(Step::EdgeScan {
+                    rel: r.var,
+                    types,
+                    left: p.nodes[ri],
+                    right: p.nodes[ri + 1],
+                    dir: r.dir,
+                });
                 bound.extend([r.var, p.nodes[ri], p.nodes[ri + 1]]);
                 // Walk out from both ends of the scanned edge.
                 for (k, rel) in p.rels.iter().enumerate().skip(ri + 1) {
-                    push_expand(&mut steps, &mut bound, p.nodes[k], p.nodes[k + 1], rel, rel.dir, &node_types, &restrict);
+                    push_expand(
+                        &mut steps,
+                        &mut bound,
+                        p.nodes[k],
+                        p.nodes[k + 1],
+                        rel,
+                        rel.dir,
+                        &node_types,
+                        &restrict,
+                    );
                 }
                 for k in (0..ri).rev() {
                     let rel = &p.rels[k];
-                    push_expand(&mut steps, &mut bound, p.nodes[k + 1], p.nodes[k], rel, flip(rel.dir), &node_types, &restrict);
+                    push_expand(
+                        &mut steps,
+                        &mut bound,
+                        p.nodes[k + 1],
+                        p.nodes[k],
+                        rel,
+                        flip(rel.dir),
+                        &node_types,
+                        &restrict,
+                    );
                 }
                 continue;
             }
-            steps.push(Step::Scan { var: p.nodes[i], types: node_types(p.nodes[i]), access, estimate: cost });
+            steps.push(Step::Scan {
+                var: p.nodes[i],
+                types: node_types(p.nodes[i]),
+                access,
+                estimate: cost,
+            });
             bound.insert(p.nodes[i]);
             i
         };
         for (k, rel) in p.rels.iter().enumerate().skip(start) {
-            push_expand(&mut steps, &mut bound, p.nodes[k], p.nodes[k + 1], rel, rel.dir, &node_types, &restrict);
+            push_expand(
+                &mut steps,
+                &mut bound,
+                p.nodes[k],
+                p.nodes[k + 1],
+                rel,
+                rel.dir,
+                &node_types,
+                &restrict,
+            );
         }
         for k in (0..start).rev() {
             let rel = &p.rels[k];
-            push_expand(&mut steps, &mut bound, p.nodes[k + 1], p.nodes[k], rel, flip(rel.dir), &node_types, &restrict);
+            push_expand(
+                &mut steps,
+                &mut bound,
+                p.nodes[k + 1],
+                p.nodes[k],
+                rel,
+                flip(rel.dir),
+                &node_types,
+                &restrict,
+            );
         }
     }
 
@@ -410,7 +615,9 @@ pub(crate) fn plan(
             Step::Scan { var, .. } => {
                 acc.insert(*var);
             }
-            Step::EdgeScan { rel, left, right, .. } => acc.extend([*rel, *left, *right]),
+            Step::EdgeScan {
+                rel, left, right, ..
+            } => acc.extend([*rel, *left, *right]),
             Step::Expand { to, rel, .. } => acc.extend([*to, *rel]),
         }
         bound_after.push(acc.clone());
@@ -418,12 +625,19 @@ pub(crate) fn plan(
     for c in conjuncts {
         let mut vars = Vec::new();
         c.vars(&mut vars);
-        match bound_after.iter().position(|b| vars.iter().all(|v| b.contains(v))) {
+        match bound_after
+            .iter()
+            .position(|b| vars.iter().all(|v| b.contains(v)))
+        {
             Some(i) if !vars.is_empty() => filters[i].push(c),
             _ => pre.push(c),
         }
     }
-    MatchPlan { steps, filters, pre }
+    MatchPlan {
+        steps,
+        filters,
+        pre,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -445,7 +659,11 @@ fn push_expand(
         rel: rel.var,
         dir,
         types: rel.types.clone(),
-        to_types: if to_bound { None } else { restrict(node_types(to)) },
+        to_types: if to_bound {
+            None
+        } else {
+            restrict(node_types(to))
+        },
         to_bound,
         rel_bound,
         hops: rel.hops,
@@ -479,19 +697,35 @@ impl MatchPlan {
         Ok(true)
     }
 
-    fn next(&self, i: usize, g: &Graph, row: &mut Vec<Value>, now: i64, emit: &mut Emit<'_>) -> Result<bool> {
+    fn next(
+        &self,
+        i: usize,
+        g: &Graph,
+        row: &mut Vec<Value>,
+        now: i64,
+        emit: &mut Emit<'_>,
+    ) -> Result<bool> {
         if !self.passes(i, g, row, now)? {
             return Ok(true);
         }
         self.step(i + 1, g, row, now, emit)
     }
 
-    fn step(&self, i: usize, g: &Graph, row: &mut Vec<Value>, now: i64, emit: &mut Emit<'_>) -> Result<bool> {
+    fn step(
+        &self,
+        i: usize,
+        g: &Graph,
+        row: &mut Vec<Value>,
+        now: i64,
+        emit: &mut Emit<'_>,
+    ) -> Result<bool> {
         let Some(step) = self.steps.get(i) else {
             return emit(row);
         };
         match step {
-            Step::Scan { var, types, access, .. } => {
+            Step::Scan {
+                var, types, access, ..
+            } => {
                 for id in candidates(g, types, access) {
                     row[*var] = Value::Node(id);
                     if !self.next(i, g, row, now, emit)? {
@@ -499,7 +733,13 @@ impl MatchPlan {
                     }
                 }
             }
-            Step::EdgeScan { rel, types, left, right, dir } => {
+            Step::EdgeScan {
+                rel,
+                types,
+                left,
+                right,
+                dir,
+            } => {
                 for t in types {
                     for id in g.members(*t) {
                         let Some(e) = g.edges.get(&id) else { continue };
@@ -523,7 +763,17 @@ impl MatchPlan {
                     }
                 }
             }
-            Step::Expand { from, to, rel, dir, types, to_types, to_bound, rel_bound, hops } => {
+            Step::Expand {
+                from,
+                to,
+                rel,
+                dir,
+                types,
+                to_types,
+                to_bound,
+                rel_bound,
+                hops,
+            } => {
                 let Value::Node(src) = row[*from] else {
                     return Ok(true);
                 };
@@ -535,7 +785,9 @@ impl MatchPlan {
                     if *to_bound {
                         return row[*to] == Value::Node(other);
                     }
-                    to_types.as_ref().is_none_or(|ts| g.nodes.get(&other).is_some_and(|n| ts.contains(&n.ty)))
+                    to_types
+                        .as_ref()
+                        .is_none_or(|ts| g.nodes.get(&other).is_some_and(|n| ts.contains(&n.ty)))
                 };
                 if let Some((min, max)) = hops {
                     for other in reachable(g, src, *dir, types.as_deref(), *min, *max) {
@@ -549,7 +801,10 @@ impl MatchPlan {
                     }
                     return Ok(true);
                 }
-                let out = matches!(dir, Dir::Out | Dir::Both).then_some(node.out.iter()).into_iter().flatten();
+                let out = matches!(dir, Dir::Out | Dir::Both)
+                    .then_some(node.out.iter())
+                    .into_iter()
+                    .flatten();
                 // In `Both` mode a self-loop appears in both lists; take it once.
                 let inc = matches!(dir, Dir::In | Dir::Both)
                     .then_some(node.inc.iter())
@@ -585,7 +840,11 @@ impl MatchPlan {
     pub(crate) fn describe(&self, g: &Graph, scope: &Scope) -> Vec<String> {
         let name = |v: usize| {
             let var = &scope.vars[v];
-            if var.anon { String::new() } else { var.name.clone() }
+            if var.anon {
+                String::new()
+            } else {
+                var.name.clone()
+            }
         };
         let types = |ts: &[TypeId]| type_names(g, ts);
         let mut out = Vec::new();
@@ -594,26 +853,58 @@ impl MatchPlan {
         }
         for (i, s) in self.steps.iter().enumerate() {
             let line = match s {
-                Step::Scan { var, types: ts, access, estimate } => {
+                Step::Scan {
+                    var,
+                    types: ts,
+                    access,
+                    estimate,
+                } => {
                     let how = match access {
                         Access::Scan => "full scan".to_owned(),
                         Access::Ids(ids) => format!("id lookup {ids:?}"),
-                        Access::Eq { prop, values } => format!("index {prop} = {} value(s)", values.len()),
+                        Access::Eq { prop, values } => {
+                            format!("index {prop} = {} value(s)", values.len())
+                        }
                         Access::Range { prop, .. } => format!("index range on {prop}"),
-                        Access::Text { prop, terms } => format!("BM25 index on {prop} for {terms:?}"),
-                        Access::Vector { prop, k, .. } => format!("HNSW vector index on {prop}, top {k}"),
+                        Access::Text { prop, terms } => {
+                            format!("BM25 index on {prop} for {terms:?}")
+                        }
+                        Access::Vector { prop, k, .. } => {
+                            format!("HNSW vector index on {prop}, top {k}")
+                        }
                     };
-                    format!("Scan    ({}:{}) via {how}  (~{estimate} rows)", name(*var), types(ts))
+                    format!(
+                        "Scan    ({}:{}) via {how}  (~{estimate} rows)",
+                        name(*var),
+                        types(ts)
+                    )
                 }
-                Step::EdgeScan { rel, types: ts, left, right, .. } => format!(
+                Step::EdgeScan {
+                    rel,
+                    types: ts,
+                    left,
+                    right,
+                    ..
+                } => format!(
                     "Scan    ({})-[{}:{}]-({}) via edge type scan",
                     name(*left),
                     name(*rel),
                     types(ts),
                     name(*right)
                 ),
-                Step::Expand { from, to, rel, dir, types: ts, hops, .. } => {
-                    let label = ts.as_deref().map(|t| format!(":{}", types(t))).unwrap_or_default();
+                Step::Expand {
+                    from,
+                    to,
+                    rel,
+                    dir,
+                    types: ts,
+                    hops,
+                    ..
+                } => {
+                    let label = ts
+                        .as_deref()
+                        .map(|t| format!(":{}", types(t)))
+                        .unwrap_or_default();
                     let hop = hops.map_or_else(String::new, |(a, b)| {
                         format!("*{a}..{}", b.map_or_else(String::new, |b| b.to_string()))
                     });
@@ -635,7 +926,11 @@ impl MatchPlan {
     }
 }
 
-fn candidates<'g>(g: &'g Graph, types: &'g [TypeId], access: &Access) -> Box<dyn Iterator<Item = ElementId> + 'g> {
+fn candidates<'g>(
+    g: &'g Graph,
+    types: &'g [TypeId],
+    access: &Access,
+) -> Box<dyn Iterator<Item = ElementId> + 'g> {
     let mut ids: Vec<ElementId> = match access {
         Access::Scan => return Box::new(types.iter().flat_map(move |t| g.members(*t))),
         Access::Ids(ids) => ids
@@ -677,7 +972,14 @@ fn candidates<'g>(g: &'g Graph, types: &'g [TypeId], access: &Access) -> Box<dyn
 
 /// Nodes reachable from `src` in `min..=max` hops (breadth-first; each node
 /// once, at its shortest distance).
-fn reachable(g: &Graph, src: u64, dir: Dir, types: Option<&[TypeId]>, min: u32, max: Option<u32>) -> Vec<u64> {
+fn reachable(
+    g: &Graph,
+    src: u64,
+    dir: Dir,
+    types: Option<&[TypeId]>,
+    min: u32,
+    max: Option<u32>,
+) -> Vec<u64> {
     let mut out = Vec::new();
     if min == 0 {
         out.push(src);
@@ -690,9 +992,17 @@ fn reachable(g: &Graph, src: u64, dir: Dir, types: Option<&[TypeId]>, min: u32, 
         depth += 1;
         let mut next = VecDeque::new();
         for n in frontier {
-            let Some(node) = g.nodes.get(&n) else { continue };
-            let out_adj = matches!(dir, Dir::Out | Dir::Both).then_some(node.out.iter()).into_iter().flatten();
-            let in_adj = matches!(dir, Dir::In | Dir::Both).then_some(node.inc.iter()).into_iter().flatten();
+            let Some(node) = g.nodes.get(&n) else {
+                continue;
+            };
+            let out_adj = matches!(dir, Dir::Out | Dir::Both)
+                .then_some(node.out.iter())
+                .into_iter()
+                .flatten();
+            let in_adj = matches!(dir, Dir::In | Dir::Both)
+                .then_some(node.inc.iter())
+                .into_iter()
+                .flatten();
             for a in out_adj.chain(in_adj) {
                 if types.is_some_and(|ts| !ts.contains(&a.ty)) || !seen.insert(a.other) {
                     continue;
@@ -729,5 +1039,9 @@ pub(crate) fn bind_where(
     if let Some(w) = where_ {
         c.compile(w)?.conjuncts(&mut conjuncts);
     }
-    Ok(Matched { scope, patterns, conjuncts })
+    Ok(Matched {
+        scope,
+        patterns,
+        conjuncts,
+    })
 }

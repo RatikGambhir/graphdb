@@ -117,7 +117,10 @@ impl Value {
         match (self, other) {
             (Self::Int(a), Self::Int(b)) => a.cmp(b),
             (Self::Int(_) | Self::Float(_), Self::Int(_) | Self::Float(_)) => {
-                let (a, b) = (self.as_f64().unwrap_or_default(), other.as_f64().unwrap_or_default());
+                let (a, b) = (
+                    self.as_f64().unwrap_or_default(),
+                    other.as_f64().unwrap_or_default(),
+                );
                 a.total_cmp(&b)
             }
             (Self::Bool(a), Self::Bool(b)) => a.cmp(b),
@@ -176,10 +179,14 @@ impl Value {
                 .as_i64()
                 .map_or_else(|| Self::Float(n.as_f64().unwrap_or(f64::NAN)), Self::Int),
             serde_json::Value::String(s) => Self::String(s),
-            serde_json::Value::Array(items) => Self::List(items.into_iter().map(Self::from_json).collect()),
-            serde_json::Value::Object(map) => {
-                Self::Map(map.into_iter().map(|(k, v)| (k, Self::from_json(v))).collect())
+            serde_json::Value::Array(items) => {
+                Self::List(items.into_iter().map(Self::from_json).collect())
             }
+            serde_json::Value::Object(map) => Self::Map(
+                map.into_iter()
+                    .map(|(k, v)| (k, Self::from_json(v)))
+                    .collect(),
+            ),
         }
     }
 
@@ -196,7 +203,9 @@ impl Value {
             Self::Float(f) => serde_json::Number::from_f64(*f).map_or(J::Null, J::Number),
             Self::String(s) => J::String(s.clone()),
             Self::List(items) => J::Array(items.iter().map(Self::to_json).collect()),
-            Self::Map(map) => J::Object(map.iter().map(|(k, v)| (k.clone(), v.to_json())).collect()),
+            Self::Map(map) => {
+                J::Object(map.iter().map(|(k, v)| (k.clone(), v.to_json())).collect())
+            }
             Self::Vector(v) => J::Array(
                 v.iter()
                     .map(|f| serde_json::Number::from_f64(f64::from(*f)).map_or(J::Null, J::Number))
@@ -317,7 +326,10 @@ mod tests {
     #[test]
     fn numbers_compare_across_int_and_float() {
         assert_eq!(Value::Int(2).total_cmp(&Value::Float(2.0)), Ordering::Equal);
-        assert_eq!(Value::Int(1).sql_cmp(&Value::Float(1.5)), Some(Ordering::Less));
+        assert_eq!(
+            Value::Int(1).sql_cmp(&Value::Float(1.5)),
+            Some(Ordering::Less)
+        );
         assert_eq!(Value::Int(1).sql_eq(&Value::Null), None);
         assert_eq!(Value::Int(1).sql_eq(&Value::from("1")), Some(false));
     }

@@ -32,7 +32,6 @@ pub(crate) fn ident(name: &str) -> String {
 /// let a_names = prop("name").starts_with("A");
 /// let both = adults & a_names;
 /// ```
-#[must_use]
 pub fn prop(name: impl Into<String>) -> Prop {
     Prop(name.into())
 }
@@ -94,7 +93,10 @@ impl Prop {
 
     /// `prop IN [...]`
     pub fn one_of<V: Into<Json>>(self, values: impl IntoIterator<Item = V>) -> Cond {
-        Cond(Kind::In(self.0, values.into_iter().map(Into::into).collect()))
+        Cond(Kind::In(
+            self.0,
+            values.into_iter().map(Into::into).collect(),
+        ))
     }
 
     /// `prop IS NULL`
@@ -158,10 +160,19 @@ impl Cond {
             Kind::Cmp(name, "!=", Json::Null) => format!("{} IS NOT NULL", p(name)),
             Kind::Cmp(name, op, v) => format!("{} {op} {}", p(name), bag.push(v.clone())),
             Kind::Between(name, lo, hi) => {
-                format!("{} BETWEEN {} AND {}", p(name), bag.push(lo.clone()), bag.push(hi.clone()))
+                format!(
+                    "{} BETWEEN {} AND {}",
+                    p(name),
+                    bag.push(lo.clone()),
+                    bag.push(hi.clone())
+                )
             }
-            Kind::In(name, values) => format!("{} IN {}", p(name), bag.push(Json::Array(values.clone()))),
-            Kind::Null(name, negated) => format!("{} IS {}NULL", p(name), if *negated { "NOT " } else { "" }),
+            Kind::In(name, values) => {
+                format!("{} IN {}", p(name), bag.push(Json::Array(values.clone())))
+            }
+            Kind::Null(name, negated) => {
+                format!("{} IS {}NULL", p(name), if *negated { "NOT " } else { "" })
+            }
             Kind::Call(func, name, v) => format!("{func}({}, {})", p(name), bag.push(v.clone())),
             Kind::And(a, b) => format!("({} AND {})", a.render(var, bag), b.render(var, bag)),
             Kind::Or(a, b) => format!("({} OR {})", a.render(var, bag), b.render(var, bag)),
@@ -190,8 +201,11 @@ fn replace_it(rql: &str, var: &str) -> String {
         if c == '\'' || c == '"' {
             quote = Some(c);
         }
-        let boundary_before = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_' || chars[i - 1] == '.');
-        let boundary_after = chars.get(i + 2).is_none_or(|n| !(n.is_alphanumeric() || *n == '_'));
+        let boundary_before = i == 0
+            || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_' || chars[i - 1] == '.');
+        let boundary_after = chars
+            .get(i + 2)
+            .is_none_or(|n| !(n.is_alphanumeric() || *n == '_'));
         if c == 'i' && chars.get(i + 1) == Some(&'t') && boundary_before && boundary_after {
             out.push_str(var);
             i += 2;
@@ -231,7 +245,8 @@ mod tests {
     #[test]
     fn renders_with_parameters() {
         let mut bag = Bag::default();
-        let c = (prop("age").gte(18) & !prop("name").starts_with("A")) | prop("nick").eq(Json::Null);
+        let c =
+            (prop("age").gte(18) & !prop("name").starts_with("A")) | prop("nick").eq(Json::Null);
         assert_eq!(
             c.render("n0", &mut bag),
             "((n0.`age` >= $p0 AND NOT (starts_with(n0.`name`, $p1))) OR n0.`nick` IS NULL)"
@@ -241,6 +256,9 @@ mod tests {
 
     #[test]
     fn raw_conditions_bind_it() {
-        assert_eq!(replace_it("it.age % 2 = 0 AND 'it' = x.it", "n3"), "n3.age % 2 = 0 AND 'it' = x.it");
+        assert_eq!(
+            replace_it("it.age % 2 = 0 AND 'it' = x.it", "n3"),
+            "n3.age % 2 = 0 AND 'it' = x.it"
+        );
     }
 }

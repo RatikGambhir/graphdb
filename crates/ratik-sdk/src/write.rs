@@ -9,14 +9,19 @@ use crate::error::{Error, Result};
 use crate::rows::{Edge, Node, NodeId};
 
 fn props_literal(props: &Map<String, Json>, bag: &mut Bag) -> String {
-    let fields: Vec<String> = props.iter().map(|(k, v)| format!("{}: {}", ident(k), bag.push(v.clone()))).collect();
+    let fields: Vec<String> = props
+        .iter()
+        .map(|(k, v)| format!("{}: {}", ident(k), bag.push(v.clone())))
+        .collect();
     format!("{{{}}}", fields.join(", "))
 }
 
 pub(crate) fn to_props(value: impl Serialize) -> Result<Map<String, Json>> {
     match serde_json::to_value(value) {
         Ok(Json::Object(map)) => Ok(map),
-        Ok(other) => Err(Error::Usage(format!("properties must serialize to an object, got {other}"))),
+        Ok(other) => Err(Error::Usage(format!(
+            "properties must serialize to an object, got {other}"
+        ))),
         Err(e) => Err(Error::Usage(format!("could not serialize properties: {e}"))),
     }
 }
@@ -42,7 +47,12 @@ pub struct Create<'db> {
 
 impl<'db> Create<'db> {
     pub(crate) fn new(db: &'db Ratik, label: &str) -> Self {
-        Self { db, label: label.to_owned(), props: Map::new(), error: None }
+        Self {
+            db,
+            label: label.to_owned(),
+            props: Map::new(),
+            error: None,
+        }
     }
 
     /// Sets one property.
@@ -70,9 +80,15 @@ impl<'db> Create<'db> {
         }
         let mut bag = Bag::default();
         let label = ident(&self.label);
-        let q = format!("INSERT INTO {label} {} RETURNING {label}", props_literal(&self.props, &mut bag));
+        let q = format!(
+            "INSERT INTO {label} {} RETURNING {label}",
+            props_literal(&self.props, &mut bag)
+        );
         let mut rows = self.db.run_rql(&q, bag.params)?.rows;
-        let row = rows.pop().and_then(|mut r| r.pop()).ok_or_else(|| Error::NotFound(self.label.clone()))?;
+        let row = rows
+            .pop()
+            .and_then(|mut r| r.pop())
+            .ok_or_else(|| Error::NotFound(self.label.clone()))?;
         Node::from_json(row)
     }
 }
@@ -93,7 +109,11 @@ pub(crate) fn create_many<T: Serialize>(
     }
     let label = ident(label);
     let q = format!("INSERT INTO {label} {} RETURNING {label}", rows.join(", "));
-    db.run_rql(&q, bag.params)?.rows.into_iter().map(|mut r| Node::from_json(r.swap_remove(0))).collect()
+    db.run_rql(&q, bag.params)?
+        .rows
+        .into_iter()
+        .map(|mut r| Node::from_json(r.swap_remove(0)))
+        .collect()
 }
 
 /// Connects two nodes with a new edge. Returned by [`Ratik::link`].
@@ -119,7 +139,14 @@ pub struct Link<'db> {
 
 impl<'db> Link<'db> {
     pub(crate) fn new(db: &'db Ratik, from: NodeId, label: &str, to: NodeId) -> Self {
-        Self { db, from, label: label.to_owned(), to, props: Map::new(), error: None }
+        Self {
+            db,
+            from,
+            label: label.to_owned(),
+            to,
+            props: Map::new(),
+            error: None,
+        }
     }
 
     /// Sets one edge property.

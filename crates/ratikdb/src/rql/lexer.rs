@@ -27,15 +27,17 @@ pub(crate) struct Token {
 }
 
 const SYMBOLS: &[&str] = &[
-    "->", "<=", ">=", "<>", "!=", "==", "||", "..", "(", ")", "[", "]", "{", "}", ",", ".", ":", ";", "*", "+", "-",
-    "/", "%", "=", "<", ">", "|",
+    "->", "<=", ">=", "<>", "!=", "==", "||", "..", "(", ")", "[", "]", "{", "}", ",", ".", ":",
+    ";", "*", "+", "-", "/", "%", "=", "<", ">", "|",
 ];
 
 pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
     let bytes = src.as_bytes();
     let mut out = Vec::new();
     let (mut i, mut line, mut line_start) = (0usize, 1u32, 0usize);
-    let col = |i: usize, line_start: usize| u32::try_from(src[line_start..i].chars().count() + 1).unwrap_or(u32::MAX);
+    let col = |i: usize, line_start: usize| {
+        u32::try_from(src[line_start..i].chars().count() + 1).unwrap_or(u32::MAX)
+    };
     while i < bytes.len() {
         let c = bytes[i];
         if c == b'\n' {
@@ -57,7 +59,11 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
         }
         if src[i..].starts_with("/*") {
             let Some(end) = src[i + 2..].find("*/") else {
-                return Err(Error::Syntax { line, col: col(i, line_start), msg: "unterminated /* comment".into() });
+                return Err(Error::Syntax {
+                    line,
+                    col: col(i, line_start),
+                    msg: "unterminated /* comment".into(),
+                });
             };
             for b in &bytes[i..i + 2 + end + 2] {
                 if *b == b'\n' {
@@ -73,7 +79,11 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
         let start = i;
         let (tline, tcol) = (line, col(i, line_start));
         let tok = if c == b'\'' || c == b'"' {
-            let (s, next) = lex_string(src, i, c).map_err(|msg| Error::Syntax { line, col: tcol, msg })?;
+            let (s, next) = lex_string(src, i, c).map_err(|msg| Error::Syntax {
+                line,
+                col: tcol,
+                msg,
+            })?;
             for ch in src[i..next].chars() {
                 if ch == '\n' {
                     line += 1;
@@ -88,7 +98,11 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
             Tok::Str(s)
         } else if c == b'`' {
             let Some(end) = src[i + 1..].find('`') else {
-                return Err(Error::Syntax { line, col: tcol, msg: "unterminated `identifier`".into() });
+                return Err(Error::Syntax {
+                    line,
+                    col: tcol,
+                    msg: "unterminated `identifier`".into(),
+                });
             };
             let name = src[i + 1..i + 1 + end].to_owned();
             i += end + 2;
@@ -100,7 +114,11 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
                 i += 1;
             }
             if s == i {
-                return Err(Error::Syntax { line, col: tcol, msg: "expected a parameter name after '$'".into() });
+                return Err(Error::Syntax {
+                    line,
+                    col: tcol,
+                    msg: "expected a parameter name after '$'".into(),
+                });
             }
             Tok::Param(src[s..i].to_owned())
         } else if c.is_ascii_digit() {
@@ -130,7 +148,11 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
                 }
             }
             let text = &src[start..i];
-            let bad = || Error::Syntax { line, col: tcol, msg: format!("invalid number '{text}'") };
+            let bad = || Error::Syntax {
+                line,
+                col: tcol,
+                msg: format!("invalid number '{text}'"),
+            };
             if float {
                 Tok::Float(text.parse().map_err(|_| bad())?)
             } else {
@@ -146,11 +168,25 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
             Tok::Sym(sym)
         } else {
             let ch = src[i..].chars().next().unwrap_or('?');
-            return Err(Error::Syntax { line, col: tcol, msg: format!("unexpected character '{ch}'") });
+            return Err(Error::Syntax {
+                line,
+                col: tcol,
+                msg: format!("unexpected character '{ch}'"),
+            });
         };
-        out.push(Token { tok, line: tline, col: tcol, pos: start });
+        out.push(Token {
+            tok,
+            line: tline,
+            col: tcol,
+            pos: start,
+        });
     }
-    out.push(Token { tok: Tok::Eof, line, col: col(src.len(), line_start.min(src.len())), pos: src.len() });
+    out.push(Token {
+        tok: Tok::Eof,
+        line,
+        col: col(src.len(), line_start.min(src.len())),
+        pos: src.len(),
+    });
     Ok(out)
 }
 
@@ -215,6 +251,14 @@ mod tests {
                 Tok::Eof,
             ]
         );
-        assert_eq!(toks("'it''s' 1.5e2 $p"), vec![Tok::Str("it's".into()), Tok::Float(150.0), Tok::Param("p".into()), Tok::Eof]);
+        assert_eq!(
+            toks("'it''s' 1.5e2 $p"),
+            vec![
+                Tok::Str("it's".into()),
+                Tok::Float(150.0),
+                Tok::Param("p".into()),
+                Tok::Eof
+            ]
+        );
     }
 }

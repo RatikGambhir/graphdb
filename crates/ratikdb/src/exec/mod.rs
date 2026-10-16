@@ -60,11 +60,19 @@ pub struct QueryResult {
 
 impl QueryResult {
     pub(crate) fn status(msg: String) -> Self {
-        Self { columns: vec!["status".into()], rows: vec![vec![Value::String(msg)]], stats: Stats::default() }
+        Self {
+            columns: vec!["status".into()],
+            rows: vec![vec![Value::String(msg)]],
+            stats: Stats::default(),
+        }
     }
 
     fn table(columns: &[&str], rows: Vec<Vec<Value>>) -> Self {
-        Self { columns: columns.iter().map(|c| (*c).to_owned()).collect(), rows, stats: Stats::default() }
+        Self {
+            columns: columns.iter().map(|c| (*c).to_owned()).collect(),
+            rows,
+            stats: Stats::default(),
+        }
     }
 
     /// Number of rows.
@@ -91,7 +99,13 @@ impl QueryResult {
     pub fn to_objects(&self) -> Vec<serde_json::Map<String, serde_json::Value>> {
         self.rows
             .iter()
-            .map(|r| self.columns.iter().cloned().zip(r.iter().map(Value::to_json)).collect())
+            .map(|r| {
+                self.columns
+                    .iter()
+                    .cloned()
+                    .zip(r.iter().map(Value::to_json))
+                    .collect()
+            })
             .collect()
     }
 
@@ -122,7 +136,12 @@ pub(crate) struct Savepoint {
 
 impl<'g> Txn<'g> {
     pub(crate) fn new(g: &'g mut Graph) -> Self {
-        Self { g, log: Vec::new(), undo: Vec::new(), stats: Stats::default() }
+        Self {
+            g,
+            log: Vec::new(),
+            undo: Vec::new(),
+            stats: Stats::default(),
+        }
     }
 
     pub(crate) fn apply(&mut self, op: Op) -> Result<()> {
@@ -149,7 +168,10 @@ impl<'g> Txn<'g> {
     }
 
     pub(crate) fn savepoint(&self) -> Savepoint {
-        Savepoint { len: self.undo.len(), stats: self.stats }
+        Savepoint {
+            len: self.undo.len(),
+            stats: self.stats,
+        }
     }
 
     pub(crate) fn rollback_to(&mut self, sp: Savepoint) {
@@ -165,16 +187,22 @@ impl<'g> Txn<'g> {
     }
 
     pub(crate) fn rollback(mut self) {
-        self.rollback_to(Savepoint { len: 0, stats: Stats::default() });
+        self.rollback_to(Savepoint {
+            len: 0,
+            stats: Stats::default(),
+        });
     }
 }
 
 /// `true` if running `stmt` cannot modify the database (resolving `CALL`s).
 pub(crate) fn is_read_only(g: &Graph, stmt: &Statement, depth: u32) -> bool {
     match stmt {
-        Statement::Call { name, .. } if depth < MAX_CALL_DEPTH => g.queries.get(name).is_some_and(|q| {
-            parse(&q.body).is_ok_and(|stmts| stmts.iter().all(|s| is_read_only(g, s, depth + 1)))
-        }),
+        Statement::Call { name, .. } if depth < MAX_CALL_DEPTH => {
+            g.queries.get(name).is_some_and(|q| {
+                parse(&q.body)
+                    .is_ok_and(|stmts| stmts.iter().all(|s| is_read_only(g, s, depth + 1)))
+            })
+        }
         s => s.is_read_only(),
     }
 }
@@ -184,13 +212,26 @@ fn int(v: usize) -> Value {
 }
 
 /// Runs a read-only statement.
-pub(crate) fn run_read(g: &Graph, params: &Params, stmt: &Statement, now: i64, depth: u32) -> Result<QueryResult> {
+pub(crate) fn run_read(
+    g: &Graph,
+    params: &Params,
+    stmt: &Statement,
+    now: i64,
+    depth: u32,
+) -> Result<QueryResult> {
     match stmt {
         Statement::Select(s) => {
             let plan = select::plan_select(g, params, s, now)?;
             let (columns, rows) = plan.run(g, now)?;
-            let rows = rows.into_iter().map(|r| r.into_iter().map(|v| g.materialize(v)).collect()).collect();
-            Ok(QueryResult { columns, rows, stats: Stats::default() })
+            let rows = rows
+                .into_iter()
+                .map(|r| r.into_iter().map(|v| g.materialize(v)).collect())
+                .collect();
+            Ok(QueryResult {
+                columns,
+                rows,
+                stats: Stats::default(),
+            })
         }
         Statement::Explain(inner) => {
             let lines = match inner.as_ref() {
@@ -198,7 +239,11 @@ pub(crate) fn run_read(g: &Graph, params: &Params, stmt: &Statement, now: i64, d
                     let plan = select::plan_select(g, params, s, now)?;
                     let mut lines = plan.matcher.describe(g, &plan.scope);
                     if !plan.aggs.is_empty() || !plan.group_by.is_empty() {
-                        lines.push(format!("Aggregate  {} function(s), {} group key(s)", plan.aggs.len(), plan.group_by.len()));
+                        lines.push(format!(
+                            "Aggregate  {} function(s), {} group key(s)",
+                            plan.aggs.len(),
+                            plan.group_by.len()
+                        ));
                     }
                     if !plan.order.is_empty() {
                         lines.push(format!("Sort  {} key(s)", plan.order.len()));
@@ -208,21 +253,30 @@ pub(crate) fn run_read(g: &Graph, params: &Params, stmt: &Statement, now: i64, d
                     }
                     lines
                 }
-                Statement::Update(u) => describe_match(g, params, &u.from, u.where_.as_ref(), now, "Update")?,
-                Statement::Delete(d) => describe_match(g, params, &d.from, d.where_.as_ref(), now, "Delete")?,
+                Statement::Update(u) => {
+                    describe_match(g, params, &u.from, u.where_.as_ref(), now, "Update")?
+                }
+                Statement::Delete(d) => {
+                    describe_match(g, params, &d.from, d.where_.as_ref(), now, "Delete")?
+                }
                 Statement::Insert(i) if !i.from.is_empty() => {
                     describe_match(g, params, &i.from, i.where_.as_ref(), now, "Insert")?
                 }
                 other => vec![format!("{} (no graph matching)", statement_name(other))],
             };
-            Ok(QueryResult::table(&["plan"], lines.into_iter().map(|l| vec![Value::String(l)]).collect()))
+            Ok(QueryResult::table(
+                &["plan"],
+                lines.into_iter().map(|l| vec![Value::String(l)]).collect(),
+            ))
         }
         Statement::Show(what) => Ok(show(g, *what)),
         Statement::Describe(name) => {
-            let def = g
-                .schema
-                .by_name(name)
-                .ok_or_else(|| Error::schema(format!("unknown type '{name}'{}", crate::error::hint(name, g.schema.types().map(|t| t.name.as_str())))))?;
+            let def = g.schema.by_name(name).ok_or_else(|| {
+                Error::schema(format!(
+                    "unknown type '{name}'{}",
+                    crate::error::hint(name, g.schema.types().map(|t| t.name.as_str()))
+                ))
+            })?;
             let rows = def
                 .props
                 .iter()
@@ -241,18 +295,26 @@ pub(crate) fn run_read(g: &Graph, params: &Params, stmt: &Statement, now: i64, d
                         Value::String(index),
                         p.default.as_ref().map_or(Value::Null, |d| match d {
                             crate::schema::DefaultValue::Now => Value::String("now()".into()),
-                            crate::schema::DefaultValue::Value(v) => Value::String(crate::schema::literal(v)),
+                            crate::schema::DefaultValue::Value(v) => {
+                                Value::String(crate::schema::literal(v))
+                            }
                         }),
                     ]
                 })
                 .collect();
-            Ok(QueryResult::table(&["property", "type", "nullable", "index", "default"], rows))
+            Ok(QueryResult::table(
+                &["property", "type", "nullable", "index", "default"],
+                rows,
+            ))
         }
         Statement::Call { name, args } => {
             if depth >= MAX_CALL_DEPTH {
                 return Err(Error::query("stored queries are nested too deeply"));
             }
-            let q = g.queries.get(name).ok_or_else(|| Error::NotFound(format!("query '{name}'")))?;
+            let q = g
+                .queries
+                .get(name)
+                .ok_or_else(|| Error::NotFound(format!("query '{name}'")))?;
             let call_params = write::call_params(g, params, &q.params, args, name)?;
             let mut last = QueryResult::default();
             for s in parse(&q.body)? {
@@ -263,7 +325,10 @@ pub(crate) fn run_read(g: &Graph, params: &Params, stmt: &Statement, now: i64, d
             }
             Ok(last)
         }
-        other => Err(Error::query(format!("{} needs a write transaction", statement_name(other)))),
+        other => Err(Error::query(format!(
+            "{} needs a write transaction",
+            statement_name(other)
+        ))),
     }
 }
 
@@ -304,18 +369,38 @@ fn statement_name(s: &Statement) -> &'static str {
 
 fn show(g: &Graph, what: Show) -> QueryResult {
     let s = |v: &str| Value::String(v.to_owned());
-    let props = |t: &crate::schema::TypeDef| s(&t.props.iter().map(|p| format!("{} {}", p.name, p.ty)).collect::<Vec<_>>().join(", "));
+    let props = |t: &crate::schema::TypeDef| {
+        s(&t.props
+            .iter()
+            .map(|p| format!("{} {}", p.name, p.ty))
+            .collect::<Vec<_>>()
+            .join(", "))
+    };
     match what {
-        Show::Schema => QueryResult::table(&["ddl"], g.schema.types().map(|t| vec![s(&t.ddl())]).collect()),
+        Show::Schema => QueryResult::table(
+            &["ddl"],
+            g.schema.types().map(|t| vec![s(&t.ddl())]).collect(),
+        ),
         Show::Nodes => QueryResult::table(
             &["type", "count", "properties"],
-            g.schema.of_kind(Kind::Node).map(|t| vec![s(&t.name), int(g.member_count(t.id)), props(t)]).collect(),
+            g.schema
+                .of_kind(Kind::Node)
+                .map(|t| vec![s(&t.name), int(g.member_count(t.id)), props(t)])
+                .collect(),
         ),
         Show::Edges => QueryResult::table(
             &["type", "from", "to", "count", "properties"],
             g.schema
                 .of_kind(Kind::Edge)
-                .map(|t| vec![s(&t.name), s(&t.from.join(" | ")), s(&t.to.join(" | ")), int(g.member_count(t.id)), props(t)])
+                .map(|t| {
+                    vec![
+                        s(&t.name),
+                        s(&t.from.join(" | ")),
+                        s(&t.to.join(" | ")),
+                        int(g.member_count(t.id)),
+                        props(t),
+                    ]
+                })
                 .collect(),
         ),
         Show::Queries => QueryResult::table(
@@ -323,7 +408,8 @@ fn show(g: &Graph, what: Show) -> QueryResult {
             g.queries
                 .values()
                 .map(|q| {
-                    let sig: Vec<String> = q.params.iter().map(|(n, t)| format!("${n} {t}")).collect();
+                    let sig: Vec<String> =
+                        q.params.iter().map(|(n, t)| format!("${n} {t}")).collect();
                     vec![s(&q.name), s(&sig.join(", ")), s(&q.body)]
                 })
                 .collect(),
@@ -342,7 +428,10 @@ fn show(g: &Graph, what: Show) -> QueryResult {
                         kinds.push("BM25".to_owned());
                     }
                     if let crate::schema::PropType::Vector(n) = p.ty {
-                        let size = g.idx.vector(t.id, &p.name).map_or(0, crate::index::vector::Hnsw::len);
+                        let size = g
+                            .idx
+                            .vector(t.id, &p.name)
+                            .map_or(0, crate::index::vector::Hnsw::len);
                         kinds.push(format!("HNSW {n}d {} ({size} vectors)", p.metric));
                     }
                     for k in kinds {
@@ -353,7 +442,13 @@ fn show(g: &Graph, what: Show) -> QueryResult {
             QueryResult::table(&["type", "property", "index"], rows)
         }
         Show::Stats => QueryResult::table(
-            &["nodes", "edges", "node_types", "edge_types", "stored_queries"],
+            &[
+                "nodes",
+                "edges",
+                "node_types",
+                "edge_types",
+                "stored_queries",
+            ],
             vec![vec![
                 int(g.nodes.len()),
                 int(g.edges.len()),
@@ -366,13 +461,24 @@ fn show(g: &Graph, what: Show) -> QueryResult {
 }
 
 /// Runs any statement inside a write transaction.
-pub(crate) fn run_write(txn: &mut Txn<'_>, params: &Params, stmt: &Statement, now: i64, depth: u32) -> Result<QueryResult> {
+pub(crate) fn run_write(
+    txn: &mut Txn<'_>,
+    params: &Params,
+    stmt: &Statement,
+    now: i64,
+    depth: u32,
+) -> Result<QueryResult> {
     let mut result = match stmt {
         Statement::Call { name, args } => {
             if depth >= MAX_CALL_DEPTH {
                 return Err(Error::query("stored queries are nested too deeply"));
             }
-            let q = txn.g.queries.get(name).cloned().ok_or_else(|| Error::NotFound(format!("query '{name}'")))?;
+            let q = txn
+                .g
+                .queries
+                .get(name)
+                .cloned()
+                .ok_or_else(|| Error::NotFound(format!("query '{name}'")))?;
             let call_params = write::call_params(txn.g, params, &q.params, args, name)?;
             let mut last = QueryResult::default();
             for s in parse(&q.body)? {
@@ -381,33 +487,63 @@ pub(crate) fn run_write(txn: &mut Txn<'_>, params: &Params, stmt: &Statement, no
             last
         }
         s if s.is_read_only() => run_read(txn.g, params, s, now, depth)?,
-        Statement::CreateType { kind, name, if_not_exists, props, from, to } => {
-            ddl::create_type(txn, *kind, name, *if_not_exists, props, from, to)?
-        }
-        Statement::DropType { kind, name, if_exists, cascade } => ddl::drop_type(txn, *kind, name, *if_exists, *cascade)?,
+        Statement::CreateType {
+            kind,
+            name,
+            if_not_exists,
+            props,
+            from,
+            to,
+        } => ddl::create_type(txn, *kind, name, *if_not_exists, props, from, to)?,
+        Statement::DropType {
+            kind,
+            name,
+            if_exists,
+            cascade,
+        } => ddl::drop_type(txn, *kind, name, *if_exists, *cascade)?,
         Statement::AlterAdd { kind, name, prop } => ddl::alter_add(txn, *kind, name, prop, now)?,
         Statement::AlterDrop { kind, name, prop } => ddl::alter_drop(txn, *kind, name, prop)?,
-        Statement::CreateIndex { name, prop, flavor } => ddl::set_index(txn, name, prop, Some(*flavor))?,
-        Statement::DropIndex { name, prop } => ddl::set_index(txn, name, prop, None)?,
-        Statement::CreateQuery { name, or_replace, params: ps, body, stmt } => {
-            ddl::create_query(txn, name, *or_replace, ps, body, stmt, now, depth)?
+        Statement::CreateIndex { name, prop, flavor } => {
+            ddl::set_index(txn, name, prop, Some(*flavor))?
         }
+        Statement::DropIndex { name, prop } => ddl::set_index(txn, name, prop, None)?,
+        Statement::CreateQuery {
+            name,
+            or_replace,
+            params: ps,
+            body,
+            stmt,
+        } => ddl::create_query(txn, name, *or_replace, ps, body, stmt, now, depth)?,
         Statement::DropQuery { name, if_exists } => ddl::drop_query(txn, name, *if_exists)?,
         Statement::Insert(i) => write::insert(txn, params, i, now)?,
         Statement::InsertRows(i) => write::insert_rows(txn, params, i, now)?,
         Statement::Update(u) => write::update(txn, params, u, now)?,
         Statement::Delete(d) => write::delete(txn, params, d, now)?,
-        other => return Err(Error::query(format!("{} is not supported here", statement_name(other)))),
+        other => {
+            return Err(Error::query(format!(
+                "{} is not supported here",
+                statement_name(other)
+            )));
+        }
     };
     result.stats = txn.stats;
     Ok(result)
 }
 
 /// Checks a stored query's named parameters and returns its parsed body.
-pub(crate) fn prepare_call(g: &Graph, name: &str, params: &Params) -> Result<(Vec<Statement>, Params)> {
-    let q = g
-        .queries
-        .get(name)
-        .ok_or_else(|| Error::NotFound(format!("query '{name}'{}", crate::error::hint(name, g.queries.keys().map(String::as_str)))))?;
-    Ok((parse(&q.body)?, write::check_params(&q.params, params, name)?))
+pub(crate) fn prepare_call(
+    g: &Graph,
+    name: &str,
+    params: &Params,
+) -> Result<(Vec<Statement>, Params)> {
+    let q = g.queries.get(name).ok_or_else(|| {
+        Error::NotFound(format!(
+            "query '{name}'{}",
+            crate::error::hint(name, g.queries.keys().map(String::as_str))
+        ))
+    })?;
+    Ok((
+        parse(&q.body)?,
+        write::check_params(&q.params, params, name)?,
+    ))
 }

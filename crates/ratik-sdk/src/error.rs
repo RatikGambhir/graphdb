@@ -46,6 +46,9 @@ impl Error {
 #[cfg(feature = "embedded")]
 impl From<ratikdb::Error> for Error {
     fn from(e: ratikdb::Error) -> Self {
-        Self::Database { code: e.code().to_owned(), message: e.to_string() }
+        Self::Database {
+            code: e.code().to_owned(),
+            message: e.to_string(),
+        }
     }
 }

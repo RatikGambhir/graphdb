@@ -9,9 +9,39 @@ use crate::value::Value;
 /// Words that end an expression or clause and therefore cannot be used as
 /// bare identifiers (quote them with backticks to use them as names).
 const RESERVED: &[&str] = &[
-    "SELECT", "FROM", "WHERE", "GROUP", "BY", "HAVING", "ORDER", "LIMIT", "OFFSET", "AND", "OR", "NOT", "AS", "ASC",
-    "DESC", "SET", "RETURNING", "VALUES", "INTO", "IS", "NULL", "TRUE", "FALSE", "IN", "LIKE", "ILIKE", "BETWEEN",
-    "CASE", "WHEN", "THEN", "ELSE", "END", "DISTINCT",
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "GROUP",
+    "BY",
+    "HAVING",
+    "ORDER",
+    "LIMIT",
+    "OFFSET",
+    "AND",
+    "OR",
+    "NOT",
+    "AS",
+    "ASC",
+    "DESC",
+    "SET",
+    "RETURNING",
+    "VALUES",
+    "INTO",
+    "IS",
+    "NULL",
+    "TRUE",
+    "FALSE",
+    "IN",
+    "LIKE",
+    "ILIKE",
+    "BETWEEN",
+    "CASE",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "DISTINCT",
 ];
 
 /// Parses a script of `;`-separated statements.
@@ -19,7 +49,11 @@ const RESERVED: &[&str] = &[
 /// # Errors
 /// [`Error::Syntax`] pointing at the first offending token.
 pub fn parse(src: &str) -> Result<Vec<Statement>> {
-    let mut p = Parser { src, toks: tokenize(src)?, i: 0 };
+    let mut p = Parser {
+        src,
+        toks: tokenize(src)?,
+        i: 0,
+    };
     let mut out = Vec::new();
     loop {
         while p.eat_sym(";") {}
@@ -76,7 +110,11 @@ impl Parser<'_> {
 
     fn err(&self, msg: impl Into<String>) -> Error {
         let t = &self.toks[self.i];
-        Error::Syntax { line: t.line, col: t.col, msg: format!("{}, found {}", msg.into(), Self::describe(&t.tok)) }
+        Error::Syntax {
+            line: t.line,
+            col: t.col,
+            msg: format!("{}, found {}", msg.into(), Self::describe(&t.tok)),
+        }
     }
 
     fn is_kw_at(&self, n: usize, kw: &str) -> bool {
@@ -96,7 +134,11 @@ impl Parser<'_> {
     }
 
     fn expect_kw(&mut self, kw: &str) -> Result<()> {
-        if self.eat_kw(kw) { Ok(()) } else { Err(self.err(format!("expected {kw}"))) }
+        if self.eat_kw(kw) {
+            Ok(())
+        } else {
+            Err(self.err(format!("expected {kw}")))
+        }
     }
 
     fn is_sym(&self, s: &str) -> bool {
@@ -112,7 +154,11 @@ impl Parser<'_> {
     }
 
     fn expect_sym(&mut self, s: &str) -> Result<()> {
-        if self.eat_sym(s) { Ok(()) } else { Err(self.err(format!("expected '{s}'"))) }
+        if self.eat_sym(s) {
+            Ok(())
+        } else {
+            Err(self.err(format!("expected '{s}'")))
+        }
     }
 
     fn is_reserved(s: &str) -> bool {
@@ -169,7 +215,11 @@ impl Parser<'_> {
     fn statement(&mut self) -> Result<Statement> {
         let kw = match self.peek() {
             Tok::Ident(s) => s.to_ascii_uppercase(),
-            _ => return Err(self.err("expected a statement (SELECT, INSERT, UPDATE, DELETE, CREATE, ...)")),
+            _ => {
+                return Err(
+                    self.err("expected a statement (SELECT, INSERT, UPDATE, DELETE, CREATE, ...)")
+                );
+            }
         };
         match kw.as_str() {
             "SELECT" => self.select().map(|s| Statement::Select(Box::new(s))),
@@ -196,7 +246,9 @@ impl Parser<'_> {
                 let args = self.expr_list(")")?;
                 Ok(Statement::Call { name, args })
             }
-            _ => Err(self.err("expected a statement (SELECT, INSERT, UPDATE, DELETE, CREATE, ...)")),
+            _ => {
+                Err(self.err("expected a statement (SELECT, INSERT, UPDATE, DELETE, CREATE, ...)"))
+            }
         }
     }
 
@@ -253,18 +305,23 @@ impl Parser<'_> {
             to = self.label_alternatives()?;
         }
         let mut props = Vec::new();
-        if self.eat_sym("(") {
-            if !self.eat_sym(")") {
-                loop {
-                    props.push(self.prop_def()?);
-                    if self.eat_sym(")") {
-                        break;
-                    }
-                    self.expect_sym(",")?;
+        if self.eat_sym("(") && !self.eat_sym(")") {
+            loop {
+                props.push(self.prop_def()?);
+                if self.eat_sym(")") {
+                    break;
                 }
+                self.expect_sym(",")?;
             }
         }
-        Ok(Statement::CreateType { kind, name, if_not_exists, props, from, to })
+        Ok(Statement::CreateType {
+            kind,
+            name,
+            if_not_exists,
+            props,
+            from,
+            to,
+        })
     }
 
     fn label_alternatives(&mut self) -> Result<Vec<String>> {
@@ -285,7 +342,8 @@ impl Parser<'_> {
     }
 
     fn prop_type(&mut self) -> Result<PropType> {
-        let word = self.any_name("a type (STRING, INT, FLOAT, BOOL, TIMESTAMP, VECTOR(n), JSON)")?;
+        let word =
+            self.any_name("a type (STRING, INT, FLOAT, BOOL, TIMESTAMP, VECTOR(n), JSON)")?;
         let mut ty = match word.to_ascii_uppercase().as_str() {
             "BOOL" | "BOOLEAN" => PropType::Bool,
             "INT" | "INTEGER" | "BIGINT" | "LONG" => PropType::Int,
@@ -357,9 +415,12 @@ impl Parser<'_> {
             } else if self.eat_kw("DEFAULT") {
                 let e = self.unary()?;
                 def.default = Some(match e {
-                    Expr::Func { name, args, .. } if name == "now" && args.is_empty() => DefaultValue::Now,
+                    Expr::Func { name, args, .. } if name == "now" && args.is_empty() => {
+                        DefaultValue::Now
+                    }
                     e => DefaultValue::Value(
-                        const_value(&e).ok_or_else(|| self.err("DEFAULT must be a constant or now()"))?,
+                        const_value(&e)
+                            .ok_or_else(|| self.err("DEFAULT must be a constant or now()"))?,
                     ),
                 });
             } else {
@@ -396,7 +457,13 @@ impl Parser<'_> {
         }
         let end = self.toks[self.i].pos;
         let body = self.src[start..end].trim().to_owned();
-        Ok(Statement::CreateQuery { name, or_replace, params, body, stmt: Box::new(stmt) })
+        Ok(Statement::CreateQuery {
+            name,
+            or_replace,
+            params,
+            body,
+            stmt: Box::new(stmt),
+        })
     }
 
     fn drop(&mut self) -> Result<Statement> {
@@ -407,13 +474,21 @@ impl Parser<'_> {
         }
         if self.eat_kw("QUERY") {
             let if_exists = self.if_exists()?;
-            return Ok(Statement::DropQuery { name: self.any_name("a query name")?, if_exists });
+            return Ok(Statement::DropQuery {
+                name: self.any_name("a query name")?,
+                if_exists,
+            });
         }
         let kind = self.kind()?;
         let if_exists = self.if_exists()?;
         let name = self.any_name("a type name")?;
         let cascade = self.eat_kw("CASCADE");
-        Ok(Statement::DropType { kind, name, if_exists, cascade })
+        Ok(Statement::DropType {
+            kind,
+            name,
+            if_exists,
+            cascade,
+        })
     }
 
     fn if_exists(&mut self) -> Result<bool> {
@@ -430,10 +505,18 @@ impl Parser<'_> {
         let name = self.any_name("a type name")?;
         if self.eat_kw("ADD") {
             let _ = self.eat_kw("PROPERTY") || self.eat_kw("COLUMN");
-            Ok(Statement::AlterAdd { kind, name, prop: self.prop_def()? })
+            Ok(Statement::AlterAdd {
+                kind,
+                name,
+                prop: self.prop_def()?,
+            })
         } else if self.eat_kw("DROP") {
             let _ = self.eat_kw("PROPERTY") || self.eat_kw("COLUMN");
-            Ok(Statement::AlterDrop { kind, name, prop: self.any_name("a property name")? })
+            Ok(Statement::AlterDrop {
+                kind,
+                name,
+                prop: self.any_name("a property name")?,
+            })
         } else {
             Err(self.err("expected ADD or DROP"))
         }
@@ -459,9 +542,13 @@ impl Parser<'_> {
 
     fn select(&mut self) -> Result<Select> {
         self.expect_kw("SELECT")?;
-        let mut s = Select { distinct: self.eat_kw("DISTINCT"), items: self.select_items()?, ..Select::default() };
+        let mut s = Select {
+            distinct: self.eat_kw("DISTINCT"),
+            items: self.select_items()?,
+            ..Select::default()
+        };
         if self.eat_kw("FROM") {
-            s.from = self.from_list()?;
+            s.from = self.match_list()?;
         }
         if self.eat_kw("WHERE") {
             s.where_ = Some(self.expr()?);
@@ -529,10 +616,14 @@ impl Parser<'_> {
     }
 
     fn returning(&mut self) -> Result<Vec<SelectItem>> {
-        if self.eat_kw("RETURNING") { self.select_items() } else { Ok(Vec::new()) }
+        if self.eat_kw("RETURNING") {
+            self.select_items()
+        } else {
+            Ok(Vec::new())
+        }
     }
 
-    fn from_list(&mut self) -> Result<Vec<Pattern>> {
+    fn match_list(&mut self) -> Result<Vec<Pattern>> {
         let mut out = Vec::new();
         loop {
             if self.is_sym("(") {
@@ -540,8 +631,19 @@ impl Parser<'_> {
             } else {
                 // SQL sugar: `FROM User` or `FROM User AS u` / `FROM User u`.
                 let label = self.name("a node type or a pattern like (u:User)")?;
-                let var = if self.eat_kw("AS") || self.is_name() { self.name("an alias")? } else { label.clone() };
-                out.push(Pattern { nodes: vec![NodePat { var: Some(var), label: Some(label), props: Vec::new() }], rels: Vec::new() });
+                let var = if self.eat_kw("AS") || self.is_name() {
+                    self.name("an alias")?
+                } else {
+                    label.clone()
+                };
+                out.push(Pattern {
+                    nodes: vec![NodePat {
+                        var: Some(var),
+                        label: Some(label),
+                        props: Vec::new(),
+                    }],
+                    rels: Vec::new(),
+                });
             }
             if !self.eat_sym(",") {
                 return Ok(out);
@@ -550,7 +652,10 @@ impl Parser<'_> {
     }
 
     fn pattern(&mut self) -> Result<Pattern> {
-        let mut p = Pattern { nodes: vec![self.node_pat()?], rels: Vec::new() };
+        let mut p = Pattern {
+            nodes: vec![self.node_pat()?],
+            rels: Vec::new(),
+        };
         while self.is_sym("-") || (self.is_sym("<") && matches!(self.peek_at(1), Tok::Sym("-"))) {
             p.rels.push(self.rel_pat()?);
             p.nodes.push(self.node_pat()?);
@@ -581,7 +686,13 @@ impl Parser<'_> {
             return Err(self.err("expected '[' (write edges as -[:TYPE]-> or <-[:TYPE]-)"));
         }
         self.bump();
-        let mut r = RelPat { var: None, labels: Vec::new(), dir: Dir::Both, hops: None, props: Vec::new() };
+        let mut r = RelPat {
+            var: None,
+            labels: Vec::new(),
+            dir: Dir::Both,
+            hops: None,
+            props: Vec::new(),
+        };
         if self.is_name() {
             r.var = Some(self.name("a variable")?);
         }
@@ -589,9 +700,17 @@ impl Parser<'_> {
             r.labels = self.label_alternatives()?;
         }
         if self.eat_sym("*") {
-            let min = if matches!(self.peek(), Tok::Int(_)) { Some(self.u32_lit("a hop count")?) } else { None };
+            let min = if matches!(self.peek(), Tok::Int(_)) {
+                Some(self.u32_lit("a hop count")?)
+            } else {
+                None
+            };
             r.hops = Some(if self.eat_sym("..") {
-                let max = if matches!(self.peek(), Tok::Int(_)) { Some(self.u32_lit("a hop count")?) } else { None };
+                let max = if matches!(self.peek(), Tok::Int(_)) {
+                    Some(self.u32_lit("a hop count")?)
+                } else {
+                    None
+                };
                 (min.unwrap_or(1), max)
             } else {
                 min.map_or((1, None), |m| (m, Some(m)))
@@ -660,7 +779,10 @@ impl Parser<'_> {
                     self.expect_sym("(")?;
                     let values = self.expr_list(")")?;
                     if values.len() != cols.len() {
-                        return Err(self.err(format!("expected {} values to match the column list", cols.len())));
+                        return Err(self.err(format!(
+                            "expected {} values to match the column list",
+                            cols.len()
+                        )));
                     }
                     rows.push(cols.iter().cloned().zip(values).collect());
                     if !self.eat_sym(",") {
@@ -669,7 +791,11 @@ impl Parser<'_> {
                 }
             }
             let returning = self.returning()?;
-            return Ok(Statement::InsertRows(Box::new(InsertRows { label, rows, returning })));
+            return Ok(Statement::InsertRows(Box::new(InsertRows {
+                label,
+                rows,
+                returning,
+            })));
         }
         let mut ins = Insert::default();
         loop {
@@ -679,7 +805,7 @@ impl Parser<'_> {
             }
         }
         if self.eat_kw("FROM") {
-            ins.from = self.from_list()?;
+            ins.from = self.match_list()?;
         }
         if self.eat_kw("WHERE") {
             ins.where_ = Some(self.expr()?);
@@ -690,12 +816,18 @@ impl Parser<'_> {
 
     fn update(&mut self) -> Result<Statement> {
         self.expect_kw("UPDATE")?;
-        let mut u = Update { from: self.from_list()?, ..Update::default() };
+        let mut u = Update {
+            from: self.match_list()?,
+            ..Update::default()
+        };
         self.expect_kw("SET")?;
         loop {
             let first = self.any_name("a property to set")?;
-            let (var, prop) =
-                if self.eat_sym(".") { (Some(first), self.any_name("a property name")?) } else { (None, first) };
+            let (var, prop) = if self.eat_sym(".") {
+                (Some(first), self.any_name("a property name")?)
+            } else {
+                (None, first)
+            };
             self.expect_sym("=")?;
             u.sets.push((var, prop, self.expr()?));
             if !self.eat_sym(",") {
@@ -719,7 +851,7 @@ impl Parser<'_> {
             }
         }
         self.expect_kw("FROM")?;
-        d.from = self.from_list()?;
+        d.from = self.match_list()?;
         if self.eat_kw("WHERE") {
             d.where_ = Some(self.expr()?);
         }
@@ -787,7 +919,9 @@ impl Parser<'_> {
             return Ok(Expr::IsNull(Box::new(l), negated));
         }
         let negated = self.is_kw("NOT")
-            && ["IN", "LIKE", "ILIKE", "BETWEEN"].iter().any(|k| self.is_kw_at(1, k))
+            && ["IN", "LIKE", "ILIKE", "BETWEEN"]
+                .iter()
+                .any(|k| self.is_kw_at(1, k))
             && self.eat_kw("NOT");
         if self.eat_kw("IN") {
             return Ok(Expr::In(Box::new(l), Box::new(self.additive()?), negated));
@@ -808,7 +942,12 @@ impl Parser<'_> {
             let lo = self.additive()?;
             self.expect_kw("AND")?;
             let hi = self.additive()?;
-            return Ok(Expr::Between(Box::new(l), Box::new(lo), Box::new(hi), negated));
+            return Ok(Expr::Between(
+                Box::new(l),
+                Box::new(lo),
+                Box::new(hi),
+                negated,
+            ));
         }
         if negated {
             return Err(self.err("expected IN, LIKE or BETWEEN after NOT"));
@@ -924,11 +1063,21 @@ impl Parser<'_> {
                         let name = s.to_ascii_lowercase();
                         if self.eat_sym("*") {
                             self.expect_sym(")")?;
-                            return Ok(Expr::Func { name, args: Vec::new(), distinct: false, star: true });
+                            return Ok(Expr::Func {
+                                name,
+                                args: Vec::new(),
+                                distinct: false,
+                                star: true,
+                            });
                         }
                         let distinct = self.eat_kw("DISTINCT");
                         let args = self.expr_list(")")?;
-                        Ok(Expr::Func { name, args, distinct, star: false })
+                        Ok(Expr::Func {
+                            name,
+                            args,
+                            distinct,
+                            star: false,
+                        })
                     }
                     _ if !Self::is_reserved(&s) => {
                         self.bump();
@@ -943,7 +1092,11 @@ impl Parser<'_> {
 
     fn case(&mut self) -> Result<Expr> {
         self.expect_kw("CASE")?;
-        let operand = if self.is_kw("WHEN") { None } else { Some(Box::new(self.expr()?)) };
+        let operand = if self.is_kw("WHEN") {
+            None
+        } else {
+            Some(Box::new(self.expr()?))
+        };
         let mut whens = Vec::new();
         while self.eat_kw("WHEN") {
             let cond = self.expr()?;
@@ -953,9 +1106,17 @@ impl Parser<'_> {
         if whens.is_empty() {
             return Err(self.err("expected WHEN"));
         }
-        let else_ = if self.eat_kw("ELSE") { Some(Box::new(self.expr()?)) } else { None };
+        let else_ = if self.eat_kw("ELSE") {
+            Some(Box::new(self.expr()?))
+        } else {
+            None
+        };
         self.expect_kw("END")?;
-        Ok(Expr::Case { operand, whens, else_ })
+        Ok(Expr::Case {
+            operand,
+            whens,
+            else_,
+        })
     }
 }
 
@@ -963,7 +1124,11 @@ impl Parser<'_> {
 pub(crate) fn const_value(e: &Expr) -> Option<Value> {
     match e {
         Expr::Lit(v) => Some(v.clone()),
-        Expr::List(items) => items.iter().map(const_value).collect::<Option<Vec<_>>>().map(Value::List),
+        Expr::List(items) => items
+            .iter()
+            .map(const_value)
+            .collect::<Option<Vec<_>>>()
+            .map(Value::List),
         Expr::Map(items) => items
             .iter()
             .map(|(k, v)| const_value(v).map(|v| (k.clone(), v)))
@@ -996,7 +1161,9 @@ mod tests {
         assert_eq!(props[3].metric, Metric::Dot);
         assert_eq!(props[4].ty, PropType::List(Box::new(PropType::String)));
         assert_eq!(props[5].default, Some(DefaultValue::Now));
-        let Statement::CreateType { from, to, .. } = one("CREATE EDGE LIKES FROM User | Bot TO Post (at INT)") else {
+        let Statement::CreateType { from, to, .. } =
+            one("CREATE EDGE LIKES FROM User | Bot TO Post (at INT)")
+        else {
             panic!()
         };
         assert_eq!((from.len(), to.len()), (2, 1));
@@ -1019,13 +1186,22 @@ mod tests {
 
     #[test]
     fn parses_writes() {
-        assert!(matches!(one("INSERT INTO User (name, age) VALUES ('a', 1), ('b', 2)"), Statement::InsertRows(r) if r.rows.len() == 2));
+        assert!(
+            matches!(one("INSERT INTO User (name, age) VALUES ('a', 1), ('b', 2)"), Statement::InsertRows(r) if r.rows.len() == 2)
+        );
         assert!(matches!(
-            one("INSERT (a)-[:FOLLOWS {since: 2024}]->(b) FROM User a, User b WHERE a.name = 'x' AND b.name = 'y'"),
+            one(
+                "INSERT (a)-[:FOLLOWS {since: 2024}]->(b) FROM User a, User b WHERE a.name = 'x' AND b.name = 'y'"
+            ),
             Statement::Insert(_)
         ));
-        assert!(matches!(one("UPDATE User SET age = age + 1 WHERE name = 'x' RETURNING *"), Statement::Update(_)));
-        assert!(matches!(one("DELETE e FROM (a)<-[e:FOLLOWS]-(b)"), Statement::Delete(d) if d.targets == ["e"]));
+        assert!(matches!(
+            one("UPDATE User SET age = age + 1 WHERE name = 'x' RETURNING *"),
+            Statement::Update(_)
+        ));
+        assert!(
+            matches!(one("DELETE e FROM (a)<-[e:FOLLOWS]-(b)"), Statement::Delete(d) if d.targets == ["e"])
+        );
     }
 
     #[test]

@@ -8,8 +8,8 @@ const K1: f64 = 1.2;
 const B: f64 = 0.75;
 
 const STOPWORDS: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of", "on", "or", "that",
-    "the", "to", "was", "with",
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of", "on",
+    "or", "that", "the", "to", "was", "with",
 ];
 
 /// Lower-cases and splits on anything that is not alphanumeric, dropping
@@ -34,7 +34,12 @@ impl TextIndex {
         let tokens = tokenize(text);
         let len = u32::try_from(tokens.len()).unwrap_or(u32::MAX);
         for token in tokens {
-            *self.postings.entry(token).or_default().entry(id).or_default() += 1;
+            *self
+                .postings
+                .entry(token)
+                .or_default()
+                .entry(id)
+                .or_default() += 1;
         }
         self.doc_len.insert(id, len);
         self.total_len += u64::from(len);
@@ -66,7 +71,9 @@ impl TextIndex {
 
     /// `true` when the document contains any of the terms.
     pub(crate) fn matches(&self, id: ElementId, terms: &[String]) -> bool {
-        terms.iter().any(|t| self.postings.get(t).is_some_and(|d| d.contains_key(&id)))
+        terms
+            .iter()
+            .any(|t| self.postings.get(t).is_some_and(|d| d.contains_key(&id)))
     }
 
     /// Okapi BM25 score of a document for the query terms (0 when no term matches).
@@ -75,7 +82,12 @@ impl TextIndex {
             return 0.0;
         };
         let n = self.doc_len.len() as f64;
-        let avg = if n > 0.0 { self.total_len as f64 / n } else { 1.0 }.max(1.0);
+        let avg = if n > 0.0 {
+            self.total_len as f64 / n
+        } else {
+            1.0
+        }
+        .max(1.0);
         terms
             .iter()
             .filter_map(|t| {

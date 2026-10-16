@@ -81,7 +81,11 @@ impl Hnsw {
         match self.metric {
             Metric::Cosine => {
                 let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-                if norm > 0.0 { v.iter().map(|x| x / norm).collect() } else { v.to_vec() }
+                if norm > 0.0 {
+                    v.iter().map(|x| x / norm).collect()
+                } else {
+                    v.to_vec()
+                }
             }
             Metric::Euclidean | Metric::Dot => v.to_vec(),
         }
@@ -167,7 +171,7 @@ impl Hnsw {
         let mut fresh = Self::new(self.dim, self.metric);
         for (point, id) in self.ids.iter().enumerate() {
             if !self.deleted[point] {
-                fresh.insert(*id, &self.vector(point as u32).to_vec());
+                fresh.insert(*id, self.vector(point as u32));
             }
         }
         *self = fresh;
@@ -177,7 +181,10 @@ impl Hnsw {
         let mut best = self.distance(q, self.vector(ep));
         loop {
             let mut improved = false;
-            for &n in self.links[ep as usize].get(layer).map_or(&[][..], Vec::as_slice) {
+            for &n in self.links[ep as usize]
+                .get(layer)
+                .map_or(&[][..], Vec::as_slice)
+            {
                 let d = self.distance(q, self.vector(n));
                 if d < best {
                     best = d;
@@ -206,7 +213,10 @@ impl Hnsw {
             if current.0 > worst && results.len() >= ef {
                 break;
             }
-            for &n in self.links[current.1 as usize].get(layer).map_or(&[][..], Vec::as_slice) {
+            for &n in self.links[current.1 as usize]
+                .get(layer)
+                .map_or(&[][..], Vec::as_slice)
+            {
                 if !visited.insert(n) {
                     continue;
                 }
@@ -234,7 +244,10 @@ impl Hnsw {
                 break;
             }
             let v = self.vector(s.1);
-            if chosen.iter().all(|&c| self.distance(v, self.vector(c)) > s.0) {
+            if chosen
+                .iter()
+                .all(|&c| self.distance(v, self.vector(c)) > s.0)
+            {
                 chosen.push(s.1);
             }
         }
@@ -294,7 +307,10 @@ mod tests {
 
     fn brute_force(points: &[(u64, Vec<f32>)], q: &[f32], k: usize) -> Vec<u64> {
         let idx = Hnsw::new(q.len(), Metric::Euclidean);
-        let mut scored: Vec<(f32, u64)> = points.iter().map(|(id, v)| (idx.distance(q, v), *id)).collect();
+        let mut scored: Vec<(f32, u64)> = points
+            .iter()
+            .map(|(id, v)| (idx.distance(q, v), *id))
+            .collect();
         scored.sort_by(|a, b| a.0.total_cmp(&b.0));
         scored.into_iter().take(k).map(|s| s.1).collect()
     }
@@ -306,7 +322,9 @@ mod tests {
             seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
             ((seed >> 33) as f32) / (1u64 << 31) as f32
         };
-        let points: Vec<(u64, Vec<f32>)> = (0..2000).map(|i| (i, (0..16).map(|_| next()).collect())).collect();
+        let points: Vec<(u64, Vec<f32>)> = (0..2000)
+            .map(|i| (i, (0..16).map(|_| next()).collect()))
+            .collect();
         let mut idx = Hnsw::new(16, Metric::Euclidean);
         for (id, v) in &points {
             idx.insert(*id, v);

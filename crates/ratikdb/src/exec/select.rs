@@ -30,16 +30,26 @@ pub(crate) fn project(
 ) -> Result<Projection> {
     let mut names = Vec::new();
     let mut exprs = Vec::new();
-    let mut c = Compiler { g, params, scope, aliases: &[], aggs };
+    let mut c = Compiler {
+        g,
+        params,
+        scope,
+        aliases: &[],
+        aggs,
+    };
     for item in items {
         match item {
             SelectItem::Star => {
-                let named: Vec<(usize, &super::compile::Var)> =
-                    scope.named().filter(|(_, v)| v.kind != VarKind::Path).collect();
+                let named: Vec<(usize, &super::compile::Var)> = scope
+                    .named()
+                    .filter(|(_, v)| v.kind != VarKind::Path)
+                    .collect();
                 match named.as_slice() {
                     // One variable: spread its properties into columns, SQL style.
                     [(v, var)] => {
-                        let (VarKind::Node(types) | VarKind::Edge(types)) = &var.kind else { continue };
+                        let (VarKind::Node(types) | VarKind::Edge(types)) = &var.kind else {
+                            continue;
+                        };
                         names.push("_id".to_owned());
                         exprs.push(c.prop(*v, "_id")?);
                         if matches!(var.kind, VarKind::Edge(_)) {
@@ -54,7 +64,9 @@ pub(crate) fn project(
                         }
                         let mut seen = BTreeSet::new();
                         for t in types {
-                            let Some(def) = g.schema.get(*t) else { continue };
+                            let Some(def) = g.schema.get(*t) else {
+                                continue;
+                            };
                             for p in &def.props {
                                 if seen.insert(p.name.clone()) {
                                     names.push(p.name.clone());
@@ -97,11 +109,16 @@ pub(crate) struct SelectPlan {
 fn count_arg(g: &Graph, params: &Params, e: Option<&Expr>, what: &str) -> Result<Option<usize>> {
     let Some(e) = e else { return Ok(None) };
     let scope = Scope::default();
-    let v = eval(&Compiler::new(g, params, &scope).compile(e)?, &Env::new(g, &[], 0))?;
+    let v = eval(
+        &Compiler::new(g, params, &scope).compile(e)?,
+        &Env::new(g, &[], 0),
+    )?;
     match v {
         Value::Int(n) if n >= 0 => Ok(Some(usize::try_from(n).unwrap_or(usize::MAX))),
         Value::Null => Ok(None),
-        v => Err(Error::query(format!("{what} must be a non-negative integer, got {v}"))),
+        v => Err(Error::query(format!(
+            "{what} must be a non-negative integer, got {v}"
+        ))),
     }
 }
 
@@ -125,9 +142,19 @@ pub(crate) fn plan_select(g: &Graph, params: &Params, s: &Select, now: i64) -> R
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let mut c = Compiler { g, params, scope: &m.scope, aliases: &proj.names, aggs: Some(&mut aggs) };
+    let mut c = Compiler {
+        g,
+        params,
+        scope: &m.scope,
+        aliases: &proj.names,
+        aggs: Some(&mut aggs),
+    };
     let having = s.having.as_ref().map(|h| c.compile(h)).transpose()?;
-    let order = s.order_by.iter().map(|(e, desc)| Ok((c.compile(e)?, *desc))).collect::<Result<Vec<_>>>()?;
+    let order = s
+        .order_by
+        .iter()
+        .map(|(e, desc)| Ok((c.compile(e)?, *desc)))
+        .collect::<Result<Vec<_>>>()?;
     let limit = count_arg(g, params, s.limit.as_ref(), "LIMIT")?;
     let offset = count_arg(g, params, s.offset.as_ref(), "OFFSET")?.unwrap_or(0);
     let aggregate = !aggs.is_empty() || !group_by.is_empty();
@@ -162,30 +189,47 @@ pub(crate) fn plan_select(g: &Graph, params: &Params, s: &Select, now: i64) -> R
 }
 
 fn vector_hint(g: &Graph, key: &CExpr, desc: bool, k: usize, filters: usize) -> Option<VectorHint> {
-    let CExpr::Call(f, args) = key else { return None };
+    let CExpr::Call(f, args) = key else {
+        return None;
+    };
     let (metric, larger_is_closer) = f.metric()?;
     if desc != larger_is_closer {
         return None;
     }
-    let ((CExpr::Prop { var, name, slots }, CExpr::Const(q)) | (CExpr::Const(q), CExpr::Prop { var, name, slots })) =
-        (args.first()?, args.get(1)?)
+    let ((CExpr::Prop { var, name, slots }, CExpr::Const(q))
+    | (CExpr::Const(q), CExpr::Prop { var, name, slots })) = (args.first()?, args.get(1)?)
     else {
         return None;
     };
     let query = q.as_vector()?;
     let matches_metric = slots.iter().all(|(t, s)| {
-        g.schema.get(*t).is_some_and(|d| d.kind == Kind::Node && d.props[*s].metric == metric)
+        g.schema
+            .get(*t)
+            .is_some_and(|d| d.kind == Kind::Node && d.props[*s].metric == metric)
     });
     // Over-fetch when other filters may discard candidates.
     let k = if filters > 0 { k.saturating_mul(10) } else { k };
-    matches_metric.then(|| VectorHint { var: *var, prop: name.clone(), query, k })
+    matches_metric.then(|| VectorHint {
+        var: *var,
+        prop: name.clone(),
+        query,
+        k,
+    })
 }
 
 #[derive(Debug)]
 enum Acc {
     Count(i64),
-    Sum { int: i64, float: f64, is_float: bool, any: bool },
-    Avg { sum: f64, n: u64 },
+    Sum {
+        int: i64,
+        float: f64,
+        is_float: bool,
+        any: bool,
+    },
+    Avg {
+        sum: f64,
+        n: u64,
+    },
     Min(Option<Value>),
     Max(Option<Value>),
     Collect(Vec<Value>),
@@ -195,7 +239,12 @@ impl Acc {
     fn new(f: AggFn) -> Self {
         match f {
             AggFn::Count => Self::Count(0),
-            AggFn::Sum => Self::Sum { int: 0, float: 0.0, is_float: false, any: false },
+            AggFn::Sum => Self::Sum {
+                int: 0,
+                float: 0.0,
+                is_float: false,
+                any: false,
+            },
             AggFn::Avg => Self::Avg { sum: 0.0, n: 0 },
             AggFn::Min => Self::Min(None),
             AggFn::Max => Self::Max(None),
@@ -209,14 +258,23 @@ impl Acc {
         }
         match self {
             Self::Count(n) => *n += 1,
-            Self::Sum { int, float, is_float, any } => {
+            Self::Sum {
+                int,
+                float,
+                is_float,
+                any,
+            } => {
                 *any = true;
                 match v {
                     Value::Int(i) if !*is_float => {
-                        *int = int.checked_add(i).ok_or_else(|| Error::query("integer overflow in sum()"))?;
+                        *int = int
+                            .checked_add(i)
+                            .ok_or_else(|| Error::query("integer overflow in sum()"))?;
                     }
                     v => {
-                        let x = v.as_f64().ok_or_else(|| Error::ty(format!("sum() expects numbers, got {}", v.type_name())))?;
+                        let x = v.as_f64().ok_or_else(|| {
+                            Error::ty(format!("sum() expects numbers, got {}", v.type_name()))
+                        })?;
                         if !*is_float {
                             *is_float = true;
                             *float = *int as f64;
@@ -226,16 +284,24 @@ impl Acc {
                 }
             }
             Self::Avg { sum, n } => {
-                *sum += v.as_f64().ok_or_else(|| Error::ty(format!("avg() expects numbers, got {}", v.type_name())))?;
+                *sum += v.as_f64().ok_or_else(|| {
+                    Error::ty(format!("avg() expects numbers, got {}", v.type_name()))
+                })?;
                 *n += 1;
             }
             Self::Min(cur) => {
-                if cur.as_ref().is_none_or(|c| v.total_cmp(c) == Ordering::Less) {
+                if cur
+                    .as_ref()
+                    .is_none_or(|c| v.total_cmp(c) == Ordering::Less)
+                {
                     *cur = Some(v);
                 }
             }
             Self::Max(cur) => {
-                if cur.as_ref().is_none_or(|c| v.total_cmp(c) == Ordering::Greater) {
+                if cur
+                    .as_ref()
+                    .is_none_or(|c| v.total_cmp(c) == Ordering::Greater)
+                {
                     *cur = Some(v);
                 }
             }
@@ -248,7 +314,11 @@ impl Acc {
         match self {
             Self::Count(n) => Value::Int(n),
             Self::Sum { any: false, .. } => Value::Null,
-            Self::Sum { float, is_float: true, .. } => Value::Float(float),
+            Self::Sum {
+                float,
+                is_float: true,
+                ..
+            } => Value::Float(float),
             Self::Sum { int, .. } => Value::Int(int),
             Self::Avg { n: 0, .. } => Value::Null,
             Self::Avg { sum, n } => Value::Float(sum / n as f64),
@@ -290,25 +360,45 @@ impl SelectPlan {
         let early_stop = self.order.is_empty() && !self.distinct && !aggregate;
         let want = self.limit.map(|l| l.saturating_add(self.offset));
 
-        let finish_row = |row: &[Value], aggs: &[Value]| -> Result<Option<(Vec<Value>, Vec<Value>)>> {
-            let env = Env { g, row, cols: &[], aggs, now };
-            let cols = self.proj.exprs.iter().map(|e| eval(e, &env)).collect::<Result<Vec<_>>>()?;
-            let env = Env { cols: &cols, ..env };
-            if let Some(h) = &self.having
-                && !truthy(&eval(h, &env)?)
-            {
-                return Ok(None);
-            }
-            let keys = self.order.iter().map(|(e, _)| eval(e, &env)).collect::<Result<Vec<_>>>()?;
-            Ok(Some((cols, keys)))
-        };
+        let finish_row =
+            |row: &[Value], aggs: &[Value]| -> Result<Option<(Vec<Value>, Vec<Value>)>> {
+                let env = Env {
+                    g,
+                    row,
+                    cols: &[],
+                    aggs,
+                    now,
+                };
+                let cols = self
+                    .proj
+                    .exprs
+                    .iter()
+                    .map(|e| eval(e, &env))
+                    .collect::<Result<Vec<_>>>()?;
+                let env = Env { cols: &cols, ..env };
+                if let Some(h) = &self.having
+                    && !truthy(&eval(h, &env)?)
+                {
+                    return Ok(None);
+                }
+                let keys = self
+                    .order
+                    .iter()
+                    .map(|(e, _)| eval(e, &env))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Some((cols, keys)))
+            };
 
         if aggregate {
             let mut index: BTreeMap<Vec<OrdValue>, usize> = BTreeMap::new();
             let mut groups: Vec<Group> = Vec::new();
             self.matcher.run(g, width, now, &mut |row| {
                 let env = Env::new(g, row, now);
-                let key = self.group_by.iter().map(|e| eval(e, &env).map(OrdValue)).collect::<Result<Vec<_>>>()?;
+                let key = self
+                    .group_by
+                    .iter()
+                    .map(|e| eval(e, &env).map(OrdValue))
+                    .collect::<Result<Vec<_>>>()?;
                 let gi = *index.entry(key).or_insert_with(|| {
                     groups.push(Group {
                         first: row.to_vec(),
@@ -355,7 +445,9 @@ impl SelectPlan {
 
         if self.distinct {
             let mut seen = BTreeSet::new();
-            out.retain(|(cols, _)| seen.insert(cols.iter().cloned().map(OrdValue).collect::<Vec<_>>()));
+            out.retain(|(cols, _)| {
+                seen.insert(cols.iter().cloned().map(OrdValue).collect::<Vec<_>>())
+            });
         }
         if !self.order.is_empty() {
             out.sort_by(|a, b| order_cmp(&a.1, &b.1, &self.order));

@@ -439,7 +439,12 @@ impl fmt::Display for Expr {
             Self::Unary(UnOp::Not, e) => write!(f, "NOT {e}"),
             Self::Unary(UnOp::Neg, e) => write!(f, "-{e}"),
             Self::Binary(op, l, r) => write!(f, "{l} {} {r}", op.symbol()),
-            Self::Func { name, args, distinct, star } => {
+            Self::Func {
+                name,
+                args,
+                distinct,
+                star,
+            } => {
                 write!(f, "{name}(")?;
                 if *star {
                     f.write_str("*")?;
@@ -478,14 +483,23 @@ impl fmt::Display for Expr {
             Self::Case { .. } => f.write_str("case"),
             Self::IsNull(e, neg) => write!(f, "{e} IS {}NULL", if *neg { "NOT " } else { "" }),
             Self::In(e, l, neg) => write!(f, "{e} {}IN {l}", if *neg { "NOT " } else { "" }),
-            Self::Like { expr, pattern, case_insensitive, negated } => write!(
+            Self::Like {
+                expr,
+                pattern,
+                case_insensitive,
+                negated,
+            } => write!(
                 f,
                 "{expr} {}{} {pattern}",
                 if *negated { "NOT " } else { "" },
                 if *case_insensitive { "ILIKE" } else { "LIKE" }
             ),
             Self::Between(e, lo, hi, neg) => {
-                write!(f, "{e} {}BETWEEN {lo} AND {hi}", if *neg { "NOT " } else { "" })
+                write!(
+                    f,
+                    "{e} {}BETWEEN {lo} AND {hi}",
+                    if *neg { "NOT " } else { "" }
+                )
             }
         }
     }

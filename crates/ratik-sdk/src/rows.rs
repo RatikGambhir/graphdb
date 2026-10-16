@@ -53,7 +53,10 @@ impl Rows {
 
     /// Iterates over the rows.
     pub fn iter(&self) -> impl Iterator<Item = Row<'_>> {
-        self.rows.iter().map(|values| Row { columns: &self.columns, values })
+        self.rows.iter().map(|values| Row {
+            columns: &self.columns,
+            values,
+        })
     }
 
     /// The first row, if any.
@@ -128,7 +131,11 @@ impl<'a> Row<'a> {
     /// The row as a JSON object.
     #[must_use]
     pub fn to_object(&self) -> Map<String, Json> {
-        self.columns.iter().cloned().zip(self.values.iter().cloned()).collect()
+        self.columns
+            .iter()
+            .cloned()
+            .zip(self.values.iter().cloned())
+            .collect()
     }
 
     /// Decodes the whole row; see [`Rows::decode`].
@@ -152,7 +159,10 @@ impl<'a> Row<'a> {
 }
 
 pub(crate) fn decode<T: DeserializeOwned>(v: Json, what: &str) -> Result<T> {
-    serde_json::from_value(v).map_err(|e| Error::Decode { what: what.to_owned(), reason: e.to_string() })
+    serde_json::from_value(v).map_err(|e| Error::Decode {
+        what: what.to_owned(),
+        reason: e.to_string(),
+    })
 }
 
 fn id_of(map: &Map<String, Json>, key: &str) -> Option<u64> {
@@ -173,12 +183,26 @@ pub struct Node {
 impl Node {
     pub(crate) fn from_json(v: Json) -> Result<Self> {
         let Json::Object(mut map) = v else {
-            return Err(Error::Decode { what: "node".into(), reason: format!("expected an object, got {v}") });
+            return Err(Error::Decode {
+                what: "node".into(),
+                reason: format!("expected an object, got {v}"),
+            });
         };
-        let id = id_of(&map, "_id").ok_or_else(|| Error::Decode { what: "node".into(), reason: "missing _id".into() })?;
-        let label = map.get("_label").and_then(Json::as_str).unwrap_or_default().to_owned();
+        let id = id_of(&map, "_id").ok_or_else(|| Error::Decode {
+            what: "node".into(),
+            reason: "missing _id".into(),
+        })?;
+        let label = map
+            .get("_label")
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_owned();
         map.retain(|k, _| !k.starts_with('_'));
-        Ok(Self { id, label, props: map })
+        Ok(Self {
+            id,
+            label,
+            props: map,
+        })
     }
 
     /// Decodes one property.
@@ -187,7 +211,10 @@ impl Node {
     /// When the property does not decode as `T` (a missing property decodes
     /// as JSON `null`, so use `Option<T>` for nullable ones).
     pub fn get<T: DeserializeOwned>(&self, prop: &str) -> Result<T> {
-        decode(self.props.get(prop).cloned().unwrap_or_default(), &format!("{}.{prop}", self.label))
+        decode(
+            self.props.get(prop).cloned().unwrap_or_default(),
+            &format!("{}.{prop}", self.label),
+        )
     }
 
     /// Decodes the whole node (its properties plus `_id`/`_label`) into `T`.
@@ -204,7 +231,13 @@ impl Node {
 
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}:{} {})", self.id, self.label, Json::Object(self.props.clone()))
+        write!(
+            f,
+            "({}:{} {})",
+            self.id,
+            self.label,
+            Json::Object(self.props.clone())
+        )
     }
 }
 
@@ -225,16 +258,29 @@ pub struct Edge {
 
 impl Edge {
     pub(crate) fn from_json(v: Json) -> Result<Self> {
-        let bad = |reason: &str| Error::Decode { what: "edge".into(), reason: reason.into() };
+        let bad = |reason: &str| Error::Decode {
+            what: "edge".into(),
+            reason: reason.into(),
+        };
         let Json::Object(mut map) = v else {
             return Err(bad("expected an object"));
         };
         let id = id_of(&map, "_id").ok_or_else(|| bad("missing _id"))?;
         let from = id_of(&map, "_from").ok_or_else(|| bad("missing _from"))?;
         let to = id_of(&map, "_to").ok_or_else(|| bad("missing _to"))?;
-        let label = map.get("_label").and_then(Json::as_str).unwrap_or_default().to_owned();
+        let label = map
+            .get("_label")
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_owned();
         map.retain(|k, _| !k.starts_with('_'));
-        Ok(Self { id, label, from, to, props: map })
+        Ok(Self {
+            id,
+            label,
+            from,
+            to,
+            props: map,
+        })
     }
 
     /// Decodes one property.
@@ -242,13 +288,24 @@ impl Edge {
     /// # Errors
     /// When the property does not decode as `T`.
     pub fn get<T: DeserializeOwned>(&self, prop: &str) -> Result<T> {
-        decode(self.props.get(prop).cloned().unwrap_or_default(), &format!("{}.{prop}", self.label))
+        decode(
+            self.props.get(prop).cloned().unwrap_or_default(),
+            &format!("{}.{prop}", self.label),
+        )
     }
 }
 
 impl fmt::Display for Edge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({})-[{}:{} {}]->({})", self.from, self.id, self.label, Json::Object(self.props.clone()), self.to)
+        write!(
+            f,
+            "({})-[{}:{} {}]->({})",
+            self.from,
+            self.id,
+            self.label,
+            Json::Object(self.props.clone()),
+            self.to
+        )
     }
 }
 

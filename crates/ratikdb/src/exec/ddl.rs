@@ -22,9 +22,13 @@ pub(crate) fn create_type(
 ) -> Result<QueryResult> {
     if let Some(existing) = txn.g.schema.by_name(name) {
         if if_not_exists && existing.kind == kind {
-            return Ok(QueryResult::status(format!("{kind} type {name} already exists")));
+            return Ok(QueryResult::status(format!(
+                "{kind} type {name} already exists"
+            )));
         }
-        return Err(Error::schema(format!("a type named '{name}' already exists")));
+        return Err(Error::schema(format!(
+            "a type named '{name}' already exists"
+        )));
     }
     if name.starts_with('_') || name.is_empty() {
         return Err(Error::schema(format!("invalid type name '{name}'")));
@@ -32,7 +36,10 @@ pub(crate) fn create_type(
     let mut seen = BTreeSet::new();
     for p in props {
         if !seen.insert(p.name.as_str()) {
-            return Err(Error::schema(format!("{name} declares property '{}' twice", p.name)));
+            return Err(Error::schema(format!(
+                "{name} declares property '{}' twice",
+                p.name
+            )));
         }
         p.validate(name)?;
     }
@@ -48,10 +55,19 @@ pub(crate) fn create_type(
         to: to.to_vec(),
     };
     txn.apply(Op::CreateType(def))?;
-    Ok(QueryResult::status(format!("created {} type {name}", kind.to_string().to_lowercase())))
+    Ok(QueryResult::status(format!(
+        "created {} type {name}",
+        kind.to_string().to_lowercase()
+    )))
 }
 
-pub(crate) fn drop_type(txn: &mut Txn<'_>, kind: Kind, name: &str, if_exists: bool, cascade: bool) -> Result<QueryResult> {
+pub(crate) fn drop_type(
+    txn: &mut Txn<'_>,
+    kind: Kind,
+    name: &str,
+    if_exists: bool,
+    cascade: bool,
+) -> Result<QueryResult> {
     let def = match txn.g.schema.resolve(name, kind) {
         Ok(d) => d.clone(),
         Err(_) if if_exists && txn.g.schema.by_name(name).is_none() => {
@@ -59,7 +75,12 @@ pub(crate) fn drop_type(txn: &mut Txn<'_>, kind: Kind, name: &str, if_exists: bo
         }
         Err(e) => return Err(e),
     };
-    let refs: Vec<String> = txn.g.schema.edges_referencing(name).map(|e| e.name.clone()).collect();
+    let refs: Vec<String> = txn
+        .g
+        .schema
+        .edges_referencing(name)
+        .map(|e| e.name.clone())
+        .collect();
     if kind == Kind::Node && !refs.is_empty() {
         return Err(Error::schema(format!(
             "cannot drop {name}: edge type(s) {} connect to it — drop those first",
@@ -79,7 +100,13 @@ pub(crate) fn drop_type(txn: &mut Txn<'_>, kind: Kind, name: &str, if_exists: bo
     Ok(QueryResult::status(format!("dropped {name}")))
 }
 
-pub(crate) fn alter_add(txn: &mut Txn<'_>, kind: Kind, name: &str, prop: &PropDef, now: i64) -> Result<QueryResult> {
+pub(crate) fn alter_add(
+    txn: &mut Txn<'_>,
+    kind: Kind,
+    name: &str,
+    prop: &PropDef,
+    now: i64,
+) -> Result<QueryResult> {
     let def = txn.g.schema.resolve(name, kind)?;
     prop.validate(name)?;
     let fill = match &prop.default {
@@ -94,19 +121,36 @@ pub(crate) fn alter_add(txn: &mut Txn<'_>, kind: Kind, name: &str, prop: &PropDe
         )));
     }
     let ty = def.id;
-    txn.apply(Op::AddProp { ty, def: prop.clone(), fill })?;
+    txn.apply(Op::AddProp {
+        ty,
+        def: prop.clone(),
+        fill,
+    })?;
     Ok(QueryResult::status(format!("added {name}.{}", prop.name)))
 }
 
-pub(crate) fn alter_drop(txn: &mut Txn<'_>, kind: Kind, name: &str, prop: &str) -> Result<QueryResult> {
+pub(crate) fn alter_drop(
+    txn: &mut Txn<'_>,
+    kind: Kind,
+    name: &str,
+    prop: &str,
+) -> Result<QueryResult> {
     let def = txn.g.schema.resolve(name, kind)?;
     def.prop(prop)?;
     let ty = def.id;
-    txn.apply(Op::DropProp { ty, name: prop.to_owned() })?;
+    txn.apply(Op::DropProp {
+        ty,
+        name: prop.to_owned(),
+    })?;
     Ok(QueryResult::status(format!("dropped {name}.{prop}")))
 }
 
-pub(crate) fn set_index(txn: &mut Txn<'_>, name: &str, prop: &str, flavor: Option<IndexFlavor>) -> Result<QueryResult> {
+pub(crate) fn set_index(
+    txn: &mut Txn<'_>,
+    name: &str,
+    prop: &str,
+    flavor: Option<IndexFlavor>,
+) -> Result<QueryResult> {
     let def = txn
         .g
         .schema
@@ -126,7 +170,13 @@ pub(crate) fn set_index(txn: &mut Txn<'_>, name: &str, prop: &str, flavor: Optio
         None => (unique, indexed, searchable) = (false, false, false),
     }
     let ty = def.id;
-    txn.apply(Op::SetFlags { ty, name: prop.to_owned(), unique, indexed, searchable })?;
+    txn.apply(Op::SetFlags {
+        ty,
+        name: prop.to_owned(),
+        unique,
+        indexed,
+        searchable,
+    })?;
     Ok(QueryResult::status(match flavor {
         Some(_) => format!("indexed {name}.{prop}"),
         None => format!("dropped indexes on {name}.{prop}"),
@@ -157,7 +207,9 @@ pub(crate) fn create_query(
     depth: u32,
 ) -> Result<QueryResult> {
     if txn.g.queries.contains_key(name) && !or_replace {
-        return Err(Error::schema(format!("query '{name}' already exists (use CREATE OR REPLACE QUERY)")));
+        return Err(Error::schema(format!(
+            "query '{name}' already exists (use CREATE OR REPLACE QUERY)"
+        )));
     }
     // Validate the body against the schema by running it with placeholder
     // arguments inside a savepoint that is always rolled back.
@@ -171,7 +223,11 @@ pub(crate) fn create_query(
         }
         e => e,
     })?;
-    txn.apply(Op::PutQuery(StoredQuery { name: name.to_owned(), params: params.to_vec(), body: body.to_owned() }))?;
+    txn.apply(Op::PutQuery(StoredQuery {
+        name: name.to_owned(),
+        params: params.to_vec(),
+        body: body.to_owned(),
+    }))?;
     Ok(QueryResult::status(format!("stored query {name}")))
 }
 
