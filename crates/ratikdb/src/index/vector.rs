@@ -8,15 +8,50 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use std::cell::RefCell;
+
+use rustc_hash::FxHashMap;
 
 use crate::schema::Metric;
 use crate::value::ElementId;
 
 const M: usize = 16;
 const M0: usize = M * 2;
-const EF_CONSTRUCTION: usize = 128;
+const EF_CONSTRUCTION: usize = 64;
 const MAX_LEVEL: usize = 16;
+
+/// Epoch-stamped visited set: clearing it is O(1), so one buffer per thread
+/// serves every search instead of allocating a hash set each time.
+#[derive(Debug, Default)]
+struct Visited {
+    marks: Vec<u32>,
+    epoch: u32,
+}
+
+impl Visited {
+    fn reset(&mut self, len: usize) {
+        if self.marks.len() < len {
+            self.marks.resize(len, 0);
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 {
+            self.marks.fill(0);
+            self.epoch = 1;
+        }
+    }
+
+    /// Marks `point`; `true` if it was not visited yet.
+    fn insert(&mut self, point: u32) -> bool {
+        let mark = &mut self.marks[point as usize];
+        let fresh = *mark != self.epoch;
+        *mark = self.epoch;
+        fresh
+    }
+}
+
+thread_local! {
+    static VISITED: RefCell<Visited> = RefCell::new(Visited::default());
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Scored(f32, u32);
@@ -200,7 +235,21 @@ impl Hnsw {
 
     /// Returns up to `ef` closest points on `layer`, sorted closest first.
     fn search_layer(&self, q: &[f32], eps: &[u32], ef: usize, layer: usize) -> Vec<Scored> {
-        let mut visited: FxHashSet<u32> = eps.iter().copied().collect();
+        VISITED.with_borrow_mut(|visited| self.search_layer_with(q, eps, ef, layer, visited))
+    }
+
+    fn search_layer_with(
+        &self,
+        q: &[f32],
+        eps: &[u32],
+        ef: usize,
+        layer: usize,
+        visited: &mut Visited,
+    ) -> Vec<Scored> {
+        visited.reset(self.ids.len());
+        for &ep in eps {
+            visited.insert(ep);
+        }
         let mut candidates: BinaryHeap<Reverse<Scored>> = BinaryHeap::new();
         let mut results: BinaryHeap<Scored> = BinaryHeap::new();
         for &ep in eps {
@@ -269,8 +318,14 @@ impl Hnsw {
             .iter()
             .map(|&n| Scored(self.distance(&base, self.vector(n)), n))
             .collect();
-        scored.sort_unstable();
-        self.links[point as usize][layer] = self.select(&scored, max);
+        // Plain closest-`max` pruning: the diversity heuristic is applied when
+        // a point is inserted; re-running it on every overflow costs O(max²)
+        // distance computations per neighbour and dominated build time.
+        if scored.len() > max {
+            scored.select_nth_unstable(max);
+            scored.truncate(max);
+        }
+        self.links[point as usize][layer] = scored.into_iter().map(|s| s.1).collect();
     }
 
     /// The `k` nearest live elements to `query`, closest first.
@@ -348,5 +403,54 @@ mod tests {
         idx.remove(1);
         assert_eq!(idx.search(&[1.0, 0.0], 1, 16), vec![2]);
         assert_eq!(idx.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    #[test]
+    #[ignore = "benchmark: cargo test --release -p ratikdb hnsw_build -- --ignored --nocapture"]
+    fn hnsw_build() {
+        let mut seed = 7u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            ((seed >> 33) as f32) / (1u64 << 31) as f32
+        };
+        let n: usize = std::env::var("HNSW_N")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(50_000);
+        let points: Vec<Vec<f32>> = (0..n).map(|_| (0..16).map(|_| next()).collect()).collect();
+        let started = std::time::Instant::now();
+        let mut idx = Hnsw::new(16, Metric::Cosine);
+        for (i, p) in points.iter().enumerate() {
+            idx.insert(i as u64, p);
+        }
+        eprintln!("built {n} x 16d in {:?}", started.elapsed());
+        let queries: Vec<Vec<f32>> = (0..100)
+            .map(|_| (0..16).map(|_| next()).collect())
+            .collect();
+        let started = std::time::Instant::now();
+        let mut hits = 0;
+        for q in &queries {
+            let got = idx.search(q, 10, 64);
+            let mut truth: Vec<(f32, usize)> = points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (idx.distance(&idx.prepare(q), &idx.prepare(p)), i))
+                .collect();
+            truth.sort_by(|a, b| a.0.total_cmp(&b.0));
+            hits += got
+                .iter()
+                .filter(|id| truth[..10].iter().any(|t| t.1 as u64 == **id))
+                .count();
+        }
+        eprintln!(
+            "recall@10 = {:.3} (100 queries incl. brute force in {:?})",
+            hits as f64 / 1000.0,
+            started.elapsed()
+        );
     }
 }

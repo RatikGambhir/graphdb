@@ -35,9 +35,9 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
     let bytes = src.as_bytes();
     let mut out = Vec::new();
     let (mut i, mut line, mut line_start) = (0usize, 1u32, 0usize);
-    let col = |i: usize, line_start: usize| {
-        u32::try_from(src[line_start..i].chars().count() + 1).unwrap_or(u32::MAX)
-    };
+    // (byte position, chars before it on the current line): keeps column
+    // tracking linear even for a multi-megabyte single-line script.
+    let mut cc = (0usize, 0usize);
     while i < bytes.len() {
         let c = bytes[i];
         if c == b'\n' {
@@ -61,7 +61,7 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
             let Some(end) = src[i + 2..].find("*/") else {
                 return Err(Error::Syntax {
                     line,
-                    col: col(i, line_start),
+                    col: column(src, i, line_start, &mut cc),
                     msg: "unterminated /* comment".into(),
                 });
             };
@@ -70,14 +70,15 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
                     line += 1;
                 }
             }
+            let comment_start = i;
             i += 2 + end + 2;
-            if let Some(nl) = src[..i].rfind('\n') {
-                line_start = nl + 1;
+            if let Some(nl) = src[comment_start..i].rfind('\n') {
+                line_start = comment_start + nl + 1;
             }
             continue;
         }
         let start = i;
-        let (tline, tcol) = (line, col(i, line_start));
+        let (tline, tcol) = (line, column(src, i, line_start, &mut cc));
         let tok = if c == b'\'' || c == b'"' {
             let (s, next) = lex_string(src, i, c).map_err(|msg| Error::Syntax {
                 line,
@@ -89,10 +90,10 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
                     line += 1;
                 }
             }
-            if let Some(nl) = src[..next].rfind('\n')
-                && nl >= i
-            {
-                line_start = nl + 1;
+            // Only scan the literal itself: searching the whole prefix made
+            // lexing quadratic for long single-line scripts.
+            if let Some(nl) = src[i..next].rfind('\n') {
+                line_start = i + nl + 1;
             }
             i = next;
             Tok::Str(s)
@@ -184,10 +185,20 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>> {
     out.push(Token {
         tok: Tok::Eof,
         line,
-        col: col(src.len(), line_start.min(src.len())),
+        col: column(src, src.len(), line_start.min(src.len()), &mut cc),
         pos: src.len(),
     });
     Ok(out)
+}
+
+/// 1-based column of byte offset `i`, counted in characters.
+fn column(src: &str, i: usize, line_start: usize, cache: &mut (usize, usize)) -> u32 {
+    if cache.0 < line_start || cache.0 > i {
+        *cache = (line_start, 0);
+    }
+    cache.1 += src[cache.0..i].chars().count();
+    cache.0 = i;
+    u32::try_from(cache.1 + 1).unwrap_or(u32::MAX)
 }
 
 fn lex_string(src: &str, start: usize, quote: u8) -> std::result::Result<(String, usize), String> {
@@ -260,5 +271,35 @@ mod tests {
                 Tok::Eof
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod scale {
+    use super::*;
+
+    #[test]
+    fn long_single_line_scripts_lex_in_linear_time() {
+        let row = "('name', 42, [0.1, 0.2, 0.3]),";
+        let src = row.repeat(200_000);
+        let started = std::time::Instant::now();
+        let toks = tokenize(&src).unwrap();
+        assert_eq!(toks.len(), 200_000 * 14 + 1);
+        // Quadratic behaviour took minutes here; linear takes well under a second.
+        assert!(
+            started.elapsed().as_secs() < 5,
+            "lexing took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn positions_stay_correct_across_multiline_tokens() {
+        let toks = tokenize("'a\nb' /* x\ny */ foo").unwrap();
+        let foo = toks
+            .iter()
+            .find(|t| t.tok == Tok::Ident("foo".into()))
+            .unwrap();
+        assert_eq!((foo.line, foo.col), (3, 6));
     }
 }

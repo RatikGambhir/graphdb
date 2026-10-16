@@ -452,9 +452,11 @@ impl Graph {
                     )));
                 }
                 self.check_unique(def, *id, props)?;
-                let def = def.clone();
-                for (p, v) in def.props.iter().zip(props) {
-                    self.idx.add(*ty, p, *id, v);
+                let Self { schema, idx, .. } = self;
+                if let Some(def) = schema.get(*ty) {
+                    for (p, v) in def.props.iter().zip(props) {
+                        idx.add(*ty, p, *id, v);
+                    }
                 }
                 self.nodes.insert(
                     *id,
@@ -490,9 +492,11 @@ impl Graph {
                     )));
                 }
                 self.check_unique(def, *id, props)?;
-                let def = def.clone();
-                for (p, v) in def.props.iter().zip(props) {
-                    self.idx.add(*ty, p, *id, v);
+                let Self { schema, idx, .. } = self;
+                if let Some(def) = schema.get(*ty) {
+                    for (p, v) in def.props.iter().zip(props) {
+                        idx.add(*ty, p, *id, v);
+                    }
                 }
                 if let Some(n) = self.nodes.get_mut(from) {
                     n.out.push(Adj {
