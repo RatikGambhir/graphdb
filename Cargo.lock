@@ -259,15 +259,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crc32fast"
-version = "1.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -889,14 +880,23 @@ dependencies = [
 name = "ratikdb"
 version = "0.1.0"
 dependencies = [
- "crc32fast",
  "parking_lot",
  "postcard",
+ "redb",
  "rustc-hash",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "redb"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

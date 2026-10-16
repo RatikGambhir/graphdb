@@ -35,12 +35,10 @@ mod graph;
 mod index;
 pub mod rql;
 pub mod schema;
-mod storage;
 mod value;
 
-pub use db::{Database, DbStats, Options};
+pub use db::{DATA_FILE, Database, DbStats, Options, SyncMode};
 pub use error::{Error, Result};
 pub use exec::{Params, QueryResult, Stats};
 pub use graph::StoredQuery;
-pub use storage::SyncMode;
 pub use value::{ElementId, Value};

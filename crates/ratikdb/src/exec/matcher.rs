@@ -12,7 +12,7 @@ use std::ops::Bound;
 use rustc_hash::FxHashSet;
 
 use crate::error::{Error, Result};
-use crate::graph::{Adj, Graph};
+use crate::graph::{Direction, Graph};
 use crate::rql::ast::{BinOp, Dir, Expr, Pattern};
 use crate::schema::{Kind, TypeId};
 use crate::value::{ElementId, Value};
@@ -314,6 +314,46 @@ fn prop_of(e: &CExpr, var: usize) -> Option<&str> {
     }
 }
 
+/// Index probes used for costing stop counting here: beyond this, exact
+/// numbers do not change which plan wins.
+const PROBE_CAP: usize = 10_000;
+
+fn type_count(g: &Graph, ty: TypeId) -> usize {
+    g.member_count(ty).map_or(usize::MAX / 8, |n| {
+        usize::try_from(n).unwrap_or(usize::MAX / 8)
+    })
+}
+
+fn eq_cost(g: &Graph, types: &[TypeId], prop: &str, values: &[Value]) -> usize {
+    types
+        .iter()
+        .flat_map(|t| values.iter().map(move |v| (t, v)))
+        .map(|(t, v)| {
+            g.index_eq(*t, prop, v, PROBE_CAP)
+                .map_or(PROBE_CAP, |ids| ids.len())
+        })
+        .sum()
+}
+
+/// `None` when the range cannot use the index (e.g. `age > 1.5` on an INT).
+fn range_cost(
+    g: &Graph,
+    types: &[TypeId],
+    prop: &str,
+    lo: &Bound<Value>,
+    hi: &Bound<Value>,
+) -> Option<usize> {
+    let mut total = 0;
+    for t in types {
+        match g.index_range(*t, prop, lo.as_ref(), hi.as_ref(), PROBE_CAP) {
+            Ok(Some(ids)) => total += ids.len(),
+            Ok(None) => return None,
+            Err(_) => total += PROBE_CAP,
+        }
+    }
+    Some(total)
+}
+
 /// Picks the cheapest way to produce candidates for `var`.
 fn choose_access(
     g: &Graph,
@@ -323,9 +363,9 @@ fn choose_access(
     hint: Option<&VectorHint>,
     now: i64,
 ) -> (Access, usize) {
-    let scan_cost: usize = types.iter().map(|t| g.member_count(*t)).sum();
+    let scan_cost: usize = types.iter().map(|t| type_count(g, *t)).sum();
     let mut best = (Access::Scan, scan_cost);
-    let indexed = |prop: &str| types.iter().all(|t| g.idx.btree(*t, prop).is_some());
+    let indexed = |prop: &str| types.iter().all(|t| g.has_btree(*t, prop));
     let mut consider = |access: Access, cost: usize| {
         if cost < best.1 || (cost == best.1 && matches!(best.0, Access::Scan)) {
             best = (access, cost);
@@ -333,7 +373,7 @@ fn choose_access(
     };
     if let Some(h) = hint
         && h.var == var
-        && types.iter().all(|t| g.idx.vector(*t, &h.prop).is_some())
+        && types.iter().all(|t| g.vector_index(*t, &h.prop).is_some())
     {
         consider(
             Access::Vector {
@@ -383,11 +423,7 @@ fn choose_access(
                 }
                 let (lo, hi) = match op {
                     BinOp::Eq => {
-                        let cost = types
-                            .iter()
-                            .filter_map(|t| g.idx.btree(*t, prop))
-                            .map(|i| i.eq(&value).count())
-                            .sum();
+                        let cost = eq_cost(g, types, prop, std::slice::from_ref(&value));
                         consider(
                             Access::Eq {
                                 prop: prop.to_owned(),
@@ -402,25 +438,7 @@ fn choose_access(
                     BinOp::Gt => (Bound::Excluded(value), Bound::Unbounded),
                     _ => (Bound::Included(value), Bound::Unbounded),
                 };
-                let cost = range_cost(g, types, prop, &lo, &hi);
-                consider(
-                    Access::Range {
-                        prop: prop.to_owned(),
-                        lo,
-                        hi,
-                    },
-                    cost,
-                );
-            }
-            CExpr::Between(a, lo, hi, false) => {
-                let (Some(prop), Some(lo), Some(hi)) =
-                    (prop_of(a, var), const_of(g, lo, now), const_of(g, hi, now))
-                else {
-                    continue;
-                };
-                if indexed(prop) && !lo.is_null() && !hi.is_null() {
-                    let (lo, hi) = (Bound::Included(lo), Bound::Included(hi));
-                    let cost = range_cost(g, types, prop, &lo, &hi);
+                if let Some(cost) = range_cost(g, types, prop, &lo, &hi) {
                     consider(
                         Access::Range {
                             prop: prop.to_owned(),
@@ -431,6 +449,26 @@ fn choose_access(
                     );
                 }
             }
+            CExpr::Between(a, lo, hi, false) => {
+                let (Some(prop), Some(lo), Some(hi)) =
+                    (prop_of(a, var), const_of(g, lo, now), const_of(g, hi, now))
+                else {
+                    continue;
+                };
+                if indexed(prop) && !lo.is_null() && !hi.is_null() {
+                    let (lo, hi) = (Bound::Included(lo), Bound::Included(hi));
+                    if let Some(cost) = range_cost(g, types, prop, &lo, &hi) {
+                        consider(
+                            Access::Range {
+                                prop: prop.to_owned(),
+                                lo,
+                                hi,
+                            },
+                            cost,
+                        );
+                    }
+                }
+            }
             CExpr::In(a, list, false) => {
                 let (Some(prop), Some(Value::List(values))) =
                     (prop_of(a, var), const_of(g, list, now))
@@ -438,11 +476,7 @@ fn choose_access(
                     continue;
                 };
                 if indexed(prop) {
-                    let cost = types
-                        .iter()
-                        .filter_map(|t| g.idx.btree(*t, prop))
-                        .map(|i| values.iter().map(|v| i.eq(v).count()).sum::<usize>())
-                        .sum();
+                    let cost = eq_cost(g, types, prop, &values);
                     consider(
                         Access::Eq {
                             prop: prop.to_owned(),
@@ -457,11 +491,13 @@ fn choose_access(
                 prop,
                 terms,
                 matches: true,
-            } if *v == var && types.iter().all(|t| g.idx.text(*t, prop).is_some()) => {
+            } if *v == var && types.iter().all(|t| g.has_text(*t, prop)) => {
                 let cost = types
                     .iter()
-                    .filter_map(|t| g.idx.text(*t, prop))
-                    .map(|i| i.candidates(terms).len())
+                    .map(|t| {
+                        g.text_candidates(*t, prop, terms)
+                            .map_or(PROBE_CAP, |ids| ids.len())
+                    })
                     .sum();
                 consider(
                     Access::Text {
@@ -475,20 +511,6 @@ fn choose_access(
         }
     }
     best
-}
-
-fn range_cost(
-    g: &Graph,
-    types: &[TypeId],
-    prop: &str,
-    lo: &Bound<Value>,
-    hi: &Bound<Value>,
-) -> usize {
-    types
-        .iter()
-        .filter_map(|t| g.idx.btree(*t, prop))
-        .map(|i| i.range(lo.as_ref(), hi.as_ref()).len())
-        .sum()
 }
 
 /// Builds the step-by-step plan for matching `patterns`.
@@ -528,7 +550,7 @@ pub(crate) fn plan(
                 if r.hops.is_some() || bound.contains(&r.var) {
                     return None;
                 }
-                let ecost: usize = types.iter().map(|t| g.member_count(*t)).sum();
+                let ecost: usize = types.iter().map(|t| type_count(g, *t)).sum();
                 (matches!(access, Access::Scan) && ecost < cost).then_some((ri, types, ecost))
             });
             if let Some((ri, types, _)) = edge_start {
@@ -726,8 +748,8 @@ impl MatchPlan {
             Step::Scan {
                 var, types, access, ..
             } => {
-                for id in candidates(g, types, access) {
-                    row[*var] = Value::Node(id);
+                for id in candidates(g, types, access)? {
+                    row[*var] = Value::Node(id?);
                     if !self.next(i, g, row, now, emit)? {
                         return Ok(false);
                     }
@@ -742,17 +764,17 @@ impl MatchPlan {
             } => {
                 for t in types {
                     for id in g.members(*t) {
-                        let Some(e) = g.edges.get(&id) else { continue };
+                        let id = id?;
+                        let Some((from, to)) = g.element(id)?.and_then(|e| e.ends) else {
+                            continue;
+                        };
                         let orientations: &[(u64, u64)] = match dir {
-                            Dir::Out => &[(e.from, e.to)],
-                            Dir::In => &[(e.to, e.from)],
-                            Dir::Both if e.from == e.to => &[(e.from, e.to)],
-                            Dir::Both => &[(e.from, e.to), (e.to, e.from)],
+                            Dir::Out => &[(from, to)],
+                            Dir::In => &[(to, from)],
+                            Dir::Both if from == to => &[(from, to)],
+                            Dir::Both => &[(from, to), (to, from)],
                         };
                         for (l, r) in orientations {
-                            if !self.endpoint_ok(g, *left, *l) || !self.endpoint_ok(g, *right, *r) {
-                                continue;
-                            }
                             row[*rel] = Value::Edge(id);
                             row[*left] = Value::Node(*l);
                             row[*right] = Value::Node(*r);
@@ -777,21 +799,18 @@ impl MatchPlan {
                 let Value::Node(src) = row[*from] else {
                     return Ok(true);
                 };
-                let Some(node) = g.nodes.get(&src) else {
-                    return Ok(true);
-                };
-                let type_ok = |a: &Adj| types.as_ref().is_none_or(|ts| ts.contains(&a.ty));
-                let target_ok = |row: &[Value], other: u64| {
+                let target_ok = |row: &[Value], other: u64| -> Result<bool> {
                     if *to_bound {
-                        return row[*to] == Value::Node(other);
+                        return Ok(row[*to] == Value::Node(other));
                     }
-                    to_types
-                        .as_ref()
-                        .is_none_or(|ts| g.nodes.get(&other).is_some_and(|n| ts.contains(&n.ty)))
+                    Ok(match to_types {
+                        None => true,
+                        Some(ts) => g.type_of(other)?.is_some_and(|t| ts.contains(&t)),
+                    })
                 };
                 if let Some((min, max)) = hops {
-                    for other in reachable(g, src, *dir, types.as_deref(), *min, *max) {
-                        if !target_ok(row, other) {
+                    for other in reachable(g, src, *dir, types.as_deref(), *min, *max)? {
+                        if !target_ok(row, other)? {
                             continue;
                         }
                         row[*to] = Value::Node(other);
@@ -801,18 +820,8 @@ impl MatchPlan {
                     }
                     return Ok(true);
                 }
-                let out = matches!(dir, Dir::Out | Dir::Both)
-                    .then_some(node.out.iter())
-                    .into_iter()
-                    .flatten();
-                // In `Both` mode a self-loop appears in both lists; take it once.
-                let inc = matches!(dir, Dir::In | Dir::Both)
-                    .then_some(node.inc.iter())
-                    .into_iter()
-                    .flatten()
-                    .filter(|a| !(*dir == Dir::Both && a.other == src));
-                for a in out.chain(inc) {
-                    if !type_ok(a) || !target_ok(row, a.other) {
+                for a in g.adjacent(src, direction(*dir), types.as_deref())? {
+                    if !target_ok(row, a.other)? {
                         continue;
                     }
                     if *rel_bound && row[*rel] != Value::Edge(a.edge) {
@@ -827,13 +836,6 @@ impl MatchPlan {
             }
         }
         Ok(true)
-    }
-
-    fn endpoint_ok(&self, g: &Graph, var: usize, id: u64) -> bool {
-        // EdgeScan endpoints: filters on the variable run afterwards; here we
-        // only need the node to exist.
-        let _ = var;
-        g.nodes.contains_key(&id)
     }
 
     /// Human-readable plan, one line per step (for `EXPLAIN`).
@@ -926,48 +928,61 @@ impl MatchPlan {
     }
 }
 
-fn candidates<'g>(
-    g: &'g Graph,
-    types: &'g [TypeId],
-    access: &Access,
-) -> Box<dyn Iterator<Item = ElementId> + 'g> {
-    let mut ids: Vec<ElementId> = match access {
-        Access::Scan => return Box::new(types.iter().flat_map(move |t| g.members(*t))),
-        Access::Ids(ids) => ids
-            .iter()
-            .copied()
-            .filter(|id| g.nodes.get(id).is_some_and(|n| types.contains(&n.ty)))
-            .collect(),
-        Access::Eq { prop, values } => types
-            .iter()
-            .filter_map(|t| g.idx.btree(*t, prop))
-            .flat_map(|i| values.iter().flat_map(move |v| i.eq(v)))
-            .collect(),
-        Access::Range { prop, lo, hi } => types
-            .iter()
-            .filter_map(|t| g.idx.btree(*t, prop))
-            .flat_map(|i| i.range(lo.as_ref(), hi.as_ref()))
-            .collect(),
-        Access::Text { prop, terms } => types
-            .iter()
-            .filter_map(|t| g.idx.text(*t, prop))
-            .flat_map(|i| i.candidates(terms))
-            .collect(),
+fn direction(d: Dir) -> Direction {
+    match d {
+        Dir::Out => Direction::Out,
+        Dir::In => Direction::In,
+        Dir::Both => Direction::Both,
+    }
+}
+
+type Candidates<'g> = Box<dyn Iterator<Item = Result<ElementId>> + 'g>;
+
+fn candidates<'g>(g: &'g Graph, types: &'g [TypeId], access: &Access) -> Result<Candidates<'g>> {
+    let mut ids: Vec<ElementId> = Vec::new();
+    match access {
+        Access::Scan => return Ok(Box::new(types.iter().flat_map(move |t| g.members(*t)))),
+        Access::Ids(wanted) => {
+            for id in wanted {
+                if let Some(e) = g.element(*id)?
+                    && e.ends.is_none()
+                    && types.contains(&e.ty)
+                {
+                    ids.push(*id);
+                }
+            }
+        }
+        Access::Eq { prop, values } => {
+            for t in types {
+                for v in values {
+                    ids.extend(g.index_eq(*t, prop, v, usize::MAX)?);
+                }
+            }
+        }
+        Access::Range { prop, lo, hi } => {
+            for t in types {
+                let found = g.index_range(*t, prop, lo.as_ref(), hi.as_ref(), usize::MAX)?;
+                ids.extend(found.ok_or_else(|| Error::query("index range is not usable"))?);
+            }
+        }
+        Access::Text { prop, terms } => {
+            for t in types {
+                ids.extend(g.text_candidates(*t, prop, terms)?);
+            }
+        }
         Access::Vector { prop, query, k } => {
             // Results are re-ranked exactly by ORDER BY, so order here is moot.
-            return Box::new(
-                types
-                    .iter()
-                    .filter_map(|t| g.idx.vector(*t, prop))
-                    .flat_map(|i| i.search(query, *k, (*k).max(64)))
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            );
+            for t in types {
+                if let Some(index) = g.vector_index(*t, prop) {
+                    ids.extend(index.search(query, *k, (*k).max(64)));
+                }
+            }
+            return Ok(Box::new(ids.into_iter().map(Ok)));
         }
-    };
+    }
     ids.sort_unstable();
     ids.dedup();
-    Box::new(ids.into_iter())
+    Ok(Box::new(ids.into_iter().map(Ok)))
 }
 
 /// Nodes reachable from `src` in `min..=max` hops (breadth-first; each node
@@ -979,7 +994,7 @@ fn reachable(
     types: Option<&[TypeId]>,
     min: u32,
     max: Option<u32>,
-) -> Vec<u64> {
+) -> Result<Vec<u64>> {
     let mut out = Vec::new();
     if min == 0 {
         out.push(src);
@@ -992,19 +1007,8 @@ fn reachable(
         depth += 1;
         let mut next = VecDeque::new();
         for n in frontier {
-            let Some(node) = g.nodes.get(&n) else {
-                continue;
-            };
-            let out_adj = matches!(dir, Dir::Out | Dir::Both)
-                .then_some(node.out.iter())
-                .into_iter()
-                .flatten();
-            let in_adj = matches!(dir, Dir::In | Dir::Both)
-                .then_some(node.inc.iter())
-                .into_iter()
-                .flatten();
-            for a in out_adj.chain(in_adj) {
-                if types.is_some_and(|ts| !ts.contains(&a.ty)) || !seen.insert(a.other) {
+            for a in g.adjacent(n, direction(dir), types)? {
+                if !seen.insert(a.other) {
                     continue;
                 }
                 next.push_back(a.other);
@@ -1015,7 +1019,7 @@ fn reachable(
         }
         frontier = next;
     }
-    out
+    Ok(out)
 }
 
 /// Compiles patterns plus a `WHERE` clause into a scope and a match plan.

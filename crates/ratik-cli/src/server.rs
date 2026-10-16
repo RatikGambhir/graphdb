@@ -162,24 +162,26 @@ async fn health() -> Json<J> {
     Json(json!({ "status": "ok", "name": "RatikDB", "version": env!("CARGO_PKG_VERSION") }))
 }
 
-async fn schema(State(s): State<Arc<AppState>>) -> Json<J> {
-    Json(s.db.schema_json())
+async fn schema(State(s): State<Arc<AppState>>) -> Result<Json<J>, ApiError> {
+    let db = s.db.clone();
+    Ok(Json(run_blocking(move || db.schema_json()).await?))
 }
 
-async fn stats(State(s): State<Arc<AppState>>) -> Json<J> {
-    let st = s.db.stats();
-    Json(json!({
+async fn stats(State(s): State<Arc<AppState>>) -> Result<Json<J>, ApiError> {
+    let db = s.db.clone();
+    let st = run_blocking(move || db.stats()).await?;
+    Ok(Json(json!({
         "nodes": st.nodes,
         "edges": st.edges,
         "node_types": st.node_types,
         "edge_types": st.edge_types,
         "stored_queries": st.stored_queries,
-        "wal_bytes": st.wal_bytes,
+        "disk_bytes": st.disk_bytes,
         "uptime_secs": s.started.elapsed().as_secs(),
         "pid": std::process::id(),
         "data": s.db.path().map(|p| p.display().to_string()),
         "version": env!("CARGO_PKG_VERSION"),
-    }))
+    })))
 }
 
 async fn snapshot(State(s): State<Arc<AppState>>) -> Result<Json<J>, ApiError> {
@@ -258,7 +260,7 @@ pub struct ServeOpts {
     pub sync: SyncMode,
     pub apply: Vec<PathBuf>,
     pub cors: Vec<String>,
-    pub snapshot_mb: u64,
+    pub cache_mb: usize,
     pub quiet: bool,
 }
 
@@ -303,7 +305,7 @@ pub async fn serve(opts: ServeOpts) -> anyhow::Result<()> {
     } else {
         let options = Options {
             sync: opts.sync,
-            snapshot_after_bytes: opts.snapshot_mb * 1024 * 1024,
+            cache_mb: opts.cache_mb,
         };
         Database::open_with(&opts.data, options).map_err(|e| match e {
             ratikdb::Error::Locked(_) => anyhow::anyhow!(
@@ -354,7 +356,7 @@ pub async fn serve(opts: ServeOpts) -> anyhow::Result<()> {
     std::fs::write(&state_path, serde_json::to_vec_pretty(&record)?)?;
 
     if !opts.quiet {
-        let st = state.db.stats();
+        let st = state.db.stats()?;
         println!("{}", brand::banner());
         println!("{}", brand::kv("api", &brand::rgb(&url, brand::CYAN)));
         println!(
@@ -402,10 +404,11 @@ pub async fn serve(opts: ServeOpts) -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal(state.clone()))
         .await;
     let _ = std::fs::remove_file(&state_path);
-    tracing::info!("shutting down: writing snapshot");
+    tracing::info!("shutting down");
+    // Dropping the last handle closes the database file cleanly.
     let db = state.db.clone();
     drop(state);
-    tokio::task::spawn_blocking(move || db.snapshot()).await??;
+    tokio::task::spawn_blocking(move || drop(db)).await?;
     served?;
     if !opts.quiet {
         println!("{}", brand::ok("RatikDB stopped cleanly"));

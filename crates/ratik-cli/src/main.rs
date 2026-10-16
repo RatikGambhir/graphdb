@@ -35,7 +35,7 @@ enum Cmd {
     Serve(ServeArgs),
     /// Start the server in the background.
     Start(ServeArgs),
-    /// Stop a running server gracefully (writes a snapshot first).
+    /// Stop a running server gracefully.
     Stop(CtlArgs),
     /// Stop, then start again.
     Restart(ServeArgs),
@@ -77,7 +77,8 @@ enum Cmd {
     },
     /// Print the schema as RQL.
     Schema(ConnArgs),
-    /// Compact the write-ahead log into a snapshot now.
+    /// Flush everything to disk and compact the database file.
+    #[command(alias = "compact")]
     Snapshot(ConnArgs),
     /// Write an example schema.rql to get started.
     Init {
@@ -137,9 +138,10 @@ struct ServeArgs {
     /// Allow browser requests from this origin, repeatable.
     #[arg(long, value_name = "ORIGIN")]
     cors: Vec<String>,
-    /// Snapshot once the log exceeds this many MiB.
-    #[arg(long, default_value_t = 64)]
-    snapshot_mb: u64,
+    /// Page cache size in MiB. Data beyond it stays on disk and is read on
+    /// demand, so this bounds memory use, not database size.
+    #[arg(long, env = "RATIK_CACHE_MB", default_value_t = 256)]
+    cache_mb: usize,
     #[arg(long, hide = true)]
     quiet: bool,
 }
@@ -158,7 +160,7 @@ impl ServeArgs {
             },
             apply: self.apply.clone(),
             cors: self.cors.clone(),
-            snapshot_mb: self.snapshot_mb,
+            cache_mb: self.cache_mb,
             quiet: self.quiet,
         }
     }
@@ -340,7 +342,10 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                     bail!("can't reach RatikDB at {url}");
                 }
             }
-            println!("{}", brand::ok("snapshot written; the log was compacted"));
+            println!(
+                "{}",
+                brand::ok("checkpoint written; the database file was compacted")
+            );
         }
         Cmd::Init { dir } => {
             std::fs::create_dir_all(&dir)?;

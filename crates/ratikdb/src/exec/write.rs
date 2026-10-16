@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rustc_hash::FxHashMap;
 
 use crate::error::{Error, Result};
-use crate::graph::{Graph, Op};
+use crate::graph::{Direction, Graph, Op};
 use crate::rql::ast::{Delete, Dir, Expr, Insert, InsertRows, SelectItem, Update};
 use crate::schema::{DefaultValue, Kind, TypeDef, TypeId};
 use crate::value::{ElementId, Value};
@@ -79,7 +79,7 @@ fn returning(
             let env = Env::new(g, row, now);
             proj.exprs
                 .iter()
-                .map(|e| eval(e, &env).map(|v| g.materialize(v)))
+                .map(|e| g.materialize(eval(e, &env)?))
                 .collect::<Result<Vec<_>>>()
         })
         .collect::<Result<_>>()?;
@@ -97,14 +97,14 @@ fn check_endpoints(
     from: ElementId,
     to: ElementId,
 ) -> Result<()> {
-    let name_of = |id: ElementId| {
-        g.type_of(id)
+    let name_of = |id: ElementId| -> Result<String> {
+        Ok(g.type_of(id)?
             .or_else(|| new_types.get(&id).copied())
             .and_then(|t| g.schema.get(t))
             .map(|d| d.name.clone())
-            .unwrap_or_default()
+            .unwrap_or_default())
     };
-    let (f, t) = (name_of(from), name_of(to));
+    let (f, t) = (name_of(from)?, name_of(to)?);
     if !def.from.contains(&f) || !def.to.contains(&t) {
         return Err(Error::constraint(format!(
             "{} edges go from {} to {}, but this one would go from {f} to {t}",
@@ -386,7 +386,7 @@ pub(crate) fn update(
                 continue;
             };
             let def = g
-                .type_of(id)
+                .type_of(id)?
                 .and_then(|t| g.schema.get(t))
                 .ok_or_else(|| Error::NotFound(format!("element {id}")))?;
             let (slot, p) = def.prop(prop)?;
@@ -468,9 +468,11 @@ pub(crate) fn delete(
     // RETURNING sees the elements as they were before deletion.
     let result = returning(g, params, &m.scope, &del.returning, &rows, now)?;
     for id in &nodes {
-        if let Some(n) = g.nodes.get(id) {
-            edges.extend(n.out.iter().chain(&n.inc).map(|a| a.edge));
-        }
+        edges.extend(
+            g.adjacent(*id, Direction::Both, None)?
+                .iter()
+                .map(|a| a.edge),
+        );
     }
     for id in edges {
         txn.apply(Op::DelEdge(id))?;
@@ -484,18 +486,19 @@ pub(crate) fn delete(
 /// All elements of a type plus every edge touching them (for `DROP ... CASCADE`).
 pub(crate) fn delete_all_of_type(txn: &mut Txn<'_>, ty: TypeId) -> Result<()> {
     let g: &Graph = txn.g;
-    let members: Vec<ElementId> = g.members(ty).collect();
     let mut edges = BTreeSet::new();
     let mut nodes = Vec::new();
-    for id in members {
-        match g.nodes.get(&id) {
-            Some(n) => {
-                edges.extend(n.out.iter().chain(&n.inc).map(|a| a.edge));
-                nodes.push(id);
-            }
-            None => {
-                edges.insert(id);
-            }
+    for id in g.members(ty) {
+        let id = id?;
+        if g.element(id)?.is_some_and(|e| e.ends.is_some()) {
+            edges.insert(id);
+        } else {
+            edges.extend(
+                g.adjacent(id, Direction::Both, None)?
+                    .iter()
+                    .map(|a| a.edge),
+            );
+            nodes.push(id);
         }
     }
     for id in edges {

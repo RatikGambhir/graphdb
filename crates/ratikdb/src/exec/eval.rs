@@ -50,36 +50,25 @@ fn element_id(v: &Value) -> Option<u64> {
     }
 }
 
-fn prop_by_name(g: &Graph, id: u64, name: &str) -> Value {
-    let Some((ty, props)) = g.element(id) else {
-        return Value::Null;
+fn prop_by_name(g: &Graph, id: u64, name: &str) -> Result<Value> {
+    let Some(e) = g.element(id)? else {
+        return Ok(Value::Null);
     };
-    match name {
-        "_id" => return Value::Int(id as i64),
-        "_label" => {
-            return g
-                .schema
-                .get(ty)
-                .map_or(Value::Null, |d| Value::String(d.name.clone()));
-        }
-        "_from" => {
-            return g
-                .edges
-                .get(&id)
-                .map_or(Value::Null, |e| Value::Int(e.from as i64));
-        }
-        "_to" => {
-            return g
-                .edges
-                .get(&id)
-                .map_or(Value::Null, |e| Value::Int(e.to as i64));
-        }
-        _ => {}
-    }
-    g.schema
-        .get(ty)
-        .and_then(|d| d.slot(name))
-        .map_or(Value::Null, |s| props[s].clone())
+    let int = |v: u64| Value::Int(i64::try_from(v).unwrap_or(i64::MAX));
+    Ok(match name {
+        "_id" => int(id),
+        "_label" => g
+            .schema
+            .get(e.ty)
+            .map_or(Value::Null, |d| Value::String(d.name.clone())),
+        "_from" => e.ends.map_or(Value::Null, |(from, _)| int(from)),
+        "_to" => e.ends.map_or(Value::Null, |(_, to)| int(to)),
+        _ => g
+            .schema
+            .get(e.ty)
+            .and_then(|d| d.slot(name))
+            .map_or(Value::Null, |s| e.props[s].clone()),
+    })
 }
 
 fn like(text: &str, pattern: &str) -> bool {
@@ -170,13 +159,13 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             let Some(id) = element_id(&env.row[*var]) else {
                 return Ok(Value::Null);
             };
-            let Some((ty, props)) = env.g.element(id) else {
+            let Some(e) = env.g.element(id)? else {
                 return Ok(Value::Null);
             };
             slots
                 .iter()
-                .find(|(t, _)| *t == ty)
-                .map_or(Value::Null, |(_, s)| props[*s].clone())
+                .find(|(t, _)| *t == e.ty)
+                .map_or(Value::Null, |(_, s)| e.props[*s].clone())
         }
         CExpr::Meta { var, meta } => {
             let Some(id) = element_id(&env.row[*var]) else {
@@ -188,11 +177,11 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
                 Meta::From => "_from",
                 Meta::To => "_to",
             };
-            prop_by_name(env.g, id, name)
+            prop_by_name(env.g, id, name)?
         }
         CExpr::Field(base, name) => match eval(base, env)? {
             Value::Map(mut m) => m.remove(name).unwrap_or_default(),
-            Value::Node(id) | Value::Edge(id) => prop_by_name(env.g, id, name),
+            Value::Node(id) | Value::Edge(id) => prop_by_name(env.g, id, name)?,
             Value::Null => Value::Null,
             other => {
                 return Err(Error::ty(format!(
@@ -301,20 +290,20 @@ pub(crate) fn eval(e: &CExpr, env: &Env<'_>) -> Result<Value> {
             let Some(id) = element_id(&env.row[*var]) else {
                 return Ok(Value::Null);
             };
-            let Some(ty) = env.g.type_of(id) else {
+            let Some(ty) = env.g.type_of(id)? else {
                 return Ok(Value::Null);
             };
-            let Some(idx) = env.g.idx.text(ty, prop) else {
+            if !env.g.has_text(ty, prop) {
                 return Ok(if *matches {
                     Value::Bool(false)
                 } else {
                     Value::Float(0.0)
                 });
-            };
+            }
             if *matches {
-                Value::Bool(idx.matches(id, terms))
+                Value::Bool(env.g.text_matches(ty, prop, id, terms)?)
             } else {
-                Value::Float(idx.score(id, terms))
+                Value::Float(env.g.text_score(ty, prop, id, terms)?)
             }
         }
         CExpr::List(items) => {
@@ -429,23 +418,22 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
             ))),
         }
     };
-    let degree = |out: bool, inc: bool| -> Value {
-        match &vals[0] {
-            Value::Node(id) => env.g.nodes.get(id).map_or(Value::Null, |n| {
-                Value::Int(
-                    (if out { n.out.len() } else { 0 } + if inc { n.inc.len() } else { 0 }) as i64,
-                )
-            }),
+    let degree = |out: bool, inc: bool| -> Result<Value> {
+        Ok(match &vals[0] {
+            Value::Node(id) => {
+                Value::Int(i64::try_from(env.g.degree(*id, out, inc)?).unwrap_or(i64::MAX))
+            }
             _ => Value::Null,
-        }
+        })
     };
     Ok(match f {
         Func::Coalesce => unreachable!("handled above"),
         Func::Now => Value::Int(env.now),
         Func::Id => element_id(&vals[0]).map_or(Value::Null, |id| Value::Int(id as i64)),
-        Func::Label => {
-            element_id(&vals[0]).map_or(Value::Null, |id| prop_by_name(env.g, id, "_label"))
-        }
+        Func::Label => match element_id(&vals[0]) {
+            Some(id) => prop_by_name(env.g, id, "_label")?,
+            None => Value::Null,
+        },
         Func::Lower => string(0, "lower")?.map_or(Value::Null, |s| Value::String(s.to_lowercase())),
         Func::Upper => string(0, "upper")?.map_or(Value::Null, |s| Value::String(s.to_uppercase())),
         Func::Trim => {
@@ -568,14 +556,14 @@ fn call(f: Func, args: &[CExpr], env: &Env<'_>) -> Result<Value> {
             (Some(s), Some(sep)) => Value::List(s.split(sep.as_str()).map(Value::from).collect()),
             _ => Value::Null,
         },
-        Func::Degree => degree(true, true),
-        Func::OutDegree => degree(true, false),
-        Func::InDegree => degree(false, true),
+        Func::Degree => degree(true, true)?,
+        Func::OutDegree => degree(true, false)?,
+        Func::InDegree => degree(false, true)?,
         Func::Keys => match &vals[0] {
             Value::Map(m) => Value::List(m.keys().map(|k| Value::from(k.as_str())).collect()),
             Value::Node(id) | Value::Edge(id) => env
                 .g
-                .type_of(*id)
+                .type_of(*id)?
                 .and_then(|t| env.g.schema.get(t))
                 .map_or(Value::Null, |d| {
                     Value::List(

@@ -107,8 +107,8 @@ fn serve_args(opts: &ServeOpts) -> Vec<String> {
             ratikdb::SyncMode::Never => "never".into(),
             _ => "always".into(),
         },
-        "--snapshot-mb".into(),
-        opts.snapshot_mb.to_string(),
+        "--cache-mb".into(),
+        opts.cache_mb.to_string(),
         "--quiet".into(),
     ];
     if opts.memory {
@@ -244,7 +244,7 @@ pub fn stop(data: &Path, url: Option<&str>, token: Option<&str>) -> anyhow::Resu
     } else {
         std::thread::sleep(Duration::from_millis(300));
     }
-    println!("{}", brand::ok("RatikDB stopped (snapshot written)"));
+    println!("{}", brand::ok("RatikDB stopped cleanly"));
     Ok(true)
 }
 
@@ -306,10 +306,11 @@ pub fn status(data: &Path, url: Option<&str>, token: Option<&str>) -> anyhow::Re
     println!(
         "{}",
         brand::kv(
-            "wal",
+            "disk",
             &format!(
-                "{} KiB since last snapshot",
-                stats["wal_bytes"].as_u64().unwrap_or(0) / 1024
+                "{:.1} MiB in {}",
+                stats["disk_bytes"].as_u64().unwrap_or(0) as f64 / (1024.0 * 1024.0),
+                ratikdb::DATA_FILE
             )
         )
     );
@@ -515,7 +516,7 @@ mod tests {
             sync: ratikdb::SyncMode::Always,
             apply: Vec::new(),
             cors: Vec::new(),
-            snapshot_mb: 64,
+            cache_mb: 256,
             quiet: false,
         }
     }

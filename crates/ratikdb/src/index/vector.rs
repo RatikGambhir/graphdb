@@ -70,7 +70,7 @@ impl Ord for Scored {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Hnsw {
     metric: Metric,
     dim: usize,

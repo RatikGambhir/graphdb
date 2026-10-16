@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::graph::{Graph, Op};
+use crate::index::vector::Hnsw;
 use crate::rql::ast::{Show, Statement};
 use crate::rql::parse;
 use crate::schema::Kind;
@@ -120,32 +121,32 @@ impl QueryResult {
     }
 }
 
-/// An open write transaction: everything applied is logged for the WAL and
-/// can be undone.
+/// An open write transaction, counting what it changes.
+///
+/// Rollback is the storage engine's job: if anything fails, the caller drops
+/// the underlying transaction and none of the applied ops persist.
 pub(crate) struct Txn<'g> {
     pub g: &'g mut Graph,
-    pub log: Vec<Op>,
-    undo: Vec<Op>,
     pub stats: Stats,
-}
-
-pub(crate) struct Savepoint {
-    len: usize,
-    stats: Stats,
+    /// While > 0, ops are validated by the caller but not applied (used to
+    /// type-check stored query bodies without side effects).
+    dry_run: u32,
 }
 
 impl<'g> Txn<'g> {
     pub(crate) fn new(g: &'g mut Graph) -> Self {
         Self {
             g,
-            log: Vec::new(),
-            undo: Vec::new(),
             stats: Stats::default(),
+            dry_run: 0,
         }
     }
 
     pub(crate) fn apply(&mut self, op: Op) -> Result<()> {
-        let inverse = self.g.apply(&op)?;
+        if self.dry_run > 0 {
+            return Ok(());
+        }
+        self.g.apply(&op)?;
         let s = &mut self.stats;
         match &op {
             Op::AddNode { .. } => s.nodes_created += 1,
@@ -160,56 +161,40 @@ impl<'g> Txn<'g> {
             | Op::SetFlags { .. }
             | Op::PutQuery(_)
             | Op::DropQuery(_) => s.schema_changes += 1,
-            Op::Counters { .. } | Op::RestoreProp { .. } => {}
         }
-        self.undo.push(inverse);
-        self.log.push(op);
         Ok(())
     }
 
-    pub(crate) fn savepoint(&self) -> Savepoint {
-        Savepoint {
-            len: self.undo.len(),
-            stats: self.stats,
-        }
-    }
-
-    pub(crate) fn rollback_to(&mut self, sp: Savepoint) {
-        while self.undo.len() > sp.len {
-            if let Some(op) = self.undo.pop() {
-                // Inverse ops restore a state that existed moments ago, so
-                // they cannot fail; ignoring the result is safe.
-                let _ = self.g.apply(&op);
-            }
-            self.log.pop();
-        }
-        self.stats = sp.stats;
-    }
-
-    pub(crate) fn rollback(mut self) {
-        self.rollback_to(Savepoint {
-            len: 0,
-            stats: Stats::default(),
-        });
+    /// Runs `f` with every write suppressed.
+    pub(crate) fn dry<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let stats = self.stats;
+        self.dry_run += 1;
+        let r = f(self);
+        self.dry_run -= 1;
+        self.stats = stats;
+        r
     }
 }
 
 /// `true` if running `stmt` cannot modify the database (resolving `CALL`s).
-pub(crate) fn is_read_only(g: &Graph, stmt: &Statement, depth: u32) -> bool {
+pub(crate) fn is_read_only(queries: &Queries, stmt: &Statement, depth: u32) -> bool {
     match stmt {
         Statement::Call { name, .. } if depth < MAX_CALL_DEPTH => {
-            g.queries.get(name).is_some_and(|q| {
+            queries.get(name).is_some_and(|q| {
                 parse(&q.body)
-                    .is_ok_and(|stmts| stmts.iter().all(|s| is_read_only(g, s, depth + 1)))
+                    .is_ok_and(|stmts| stmts.iter().all(|s| is_read_only(queries, s, depth + 1)))
             })
         }
         s => s.is_read_only(),
     }
 }
 
-fn int(v: usize) -> Value {
-    Value::Int(i64::try_from(v).unwrap_or(i64::MAX))
+fn int(v: impl TryInto<i64>) -> Value {
+    Value::Int(v.try_into().unwrap_or(i64::MAX))
 }
+
+/// Stored queries by name.
+pub(crate) type Queries = std::collections::BTreeMap<String, crate::graph::StoredQuery>;
 
 /// Runs a read-only statement.
 pub(crate) fn run_read(
@@ -226,7 +211,7 @@ pub(crate) fn run_read(
             let rows = rows
                 .into_iter()
                 .map(|r| r.into_iter().map(|v| g.materialize(v)).collect())
-                .collect();
+                .collect::<Result<_>>()?;
             Ok(QueryResult {
                 columns,
                 rows,
@@ -269,7 +254,7 @@ pub(crate) fn run_read(
                 lines.into_iter().map(|l| vec![Value::String(l)]).collect(),
             ))
         }
-        Statement::Show(what) => Ok(show(g, *what)),
+        Statement::Show(what) => show(g, *what),
         Statement::Describe(name) => {
             let def = g.schema.by_name(name).ok_or_else(|| {
                 Error::schema(format!(
@@ -318,7 +303,7 @@ pub(crate) fn run_read(
             let call_params = write::call_params(g, params, &q.params, args, name)?;
             let mut last = QueryResult::default();
             for s in parse(&q.body)? {
-                if !is_read_only(g, &s, depth + 1) {
+                if !is_read_only(&g.queries, &s, depth + 1) {
                     return Err(Error::query(format!("stored query '{name}' writes data")));
                 }
                 last = run_read(g, &call_params, &s, now, depth + 1)?;
@@ -367,7 +352,7 @@ fn statement_name(s: &Statement) -> &'static str {
     }
 }
 
-fn show(g: &Graph, what: Show) -> QueryResult {
+fn show(g: &Graph, what: Show) -> Result<QueryResult> {
     let s = |v: &str| Value::String(v.to_owned());
     let props = |t: &crate::schema::TypeDef| {
         s(&t.props
@@ -376,7 +361,7 @@ fn show(g: &Graph, what: Show) -> QueryResult {
             .collect::<Vec<_>>()
             .join(", "))
     };
-    match what {
+    Ok(match what {
         Show::Schema => QueryResult::table(
             &["ddl"],
             g.schema.types().map(|t| vec![s(&t.ddl())]).collect(),
@@ -385,23 +370,23 @@ fn show(g: &Graph, what: Show) -> QueryResult {
             &["type", "count", "properties"],
             g.schema
                 .of_kind(Kind::Node)
-                .map(|t| vec![s(&t.name), int(g.member_count(t.id)), props(t)])
-                .collect(),
+                .map(|t| Ok(vec![s(&t.name), int(g.member_count(t.id)?), props(t)]))
+                .collect::<Result<_>>()?,
         ),
         Show::Edges => QueryResult::table(
             &["type", "from", "to", "count", "properties"],
             g.schema
                 .of_kind(Kind::Edge)
                 .map(|t| {
-                    vec![
+                    Ok(vec![
                         s(&t.name),
                         s(&t.from.join(" | ")),
                         s(&t.to.join(" | ")),
-                        int(g.member_count(t.id)),
+                        int(g.member_count(t.id)?),
                         props(t),
-                    ]
+                    ])
                 })
-                .collect(),
+                .collect::<Result<_>>()?,
         ),
         Show::Queries => QueryResult::table(
             &["name", "params", "body"],
@@ -428,10 +413,7 @@ fn show(g: &Graph, what: Show) -> QueryResult {
                         kinds.push("BM25".to_owned());
                     }
                     if let crate::schema::PropType::Vector(n) = p.ty {
-                        let size = g
-                            .idx
-                            .vector(t.id, &p.name)
-                            .map_or(0, crate::index::vector::Hnsw::len);
+                        let size = g.vector_index(t.id, &p.name).map_or(0, Hnsw::len);
                         kinds.push(format!("HNSW {n}d {} ({size} vectors)", p.metric));
                     }
                     for k in kinds {
@@ -450,14 +432,14 @@ fn show(g: &Graph, what: Show) -> QueryResult {
                 "stored_queries",
             ],
             vec![vec![
-                int(g.nodes.len()),
-                int(g.edges.len()),
+                int(g.count_kind(Kind::Node)?),
+                int(g.count_kind(Kind::Edge)?),
                 int(g.schema.of_kind(Kind::Node).count()),
                 int(g.schema.of_kind(Kind::Edge).count()),
                 int(g.queries.len()),
             ]],
         ),
-    }
+    })
 }
 
 /// Runs any statement inside a write transaction.
@@ -532,14 +514,14 @@ pub(crate) fn run_write(
 
 /// Checks a stored query's named parameters and returns its parsed body.
 pub(crate) fn prepare_call(
-    g: &Graph,
+    queries: &Queries,
     name: &str,
     params: &Params,
 ) -> Result<(Vec<Statement>, Params)> {
-    let q = g.queries.get(name).ok_or_else(|| {
+    let q = queries.get(name).ok_or_else(|| {
         Error::NotFound(format!(
             "query '{name}'{}",
-            crate::error::hint(name, g.queries.keys().map(String::as_str))
+            crate::error::hint(name, queries.keys().map(String::as_str))
         ))
     })?;
     Ok((

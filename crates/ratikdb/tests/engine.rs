@@ -375,42 +375,95 @@ fn durability_across_restarts() {
 }
 
 #[test]
-fn torn_wal_tail_is_ignored() {
-    use std::io::Write;
+fn survives_a_crash_without_clean_shutdown() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(dir.path()).unwrap();
+    db.execute("CREATE NODE T (v INT UNIQUE); INSERT INTO T (v) VALUES (1), (2)")
+        .unwrap();
+    // Simulate a crash: the handle is never closed, and we copy the file as
+    // it sits on disk right now. Every acknowledged commit must be in it.
+    let copy = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        dir.path().join(ratikdb::DATA_FILE),
+        copy.path().join(ratikdb::DATA_FILE),
+    )
+    .unwrap();
+    std::mem::forget(db);
+    let db = Database::open(copy.path()).unwrap();
+    assert_eq!(strings(&db, "SELECT v FROM T ORDER BY v"), ["1", "2"]);
+    assert!(
+        db.execute("INSERT INTO T (v) VALUES (2)").is_err(),
+        "index intact"
+    );
+}
+
+#[test]
+fn data_larger_than_the_page_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let options = ratikdb::Options {
+        cache_mb: 1,
+        ..ratikdb::Options::default()
+    };
+    let rows = 20_000;
+    {
+        let db = Database::open_with(dir.path(), options.clone()).unwrap();
+        db.execute("CREATE NODE Doc (n INT UNIQUE, body STRING); CREATE EDGE NEXT FROM Doc TO Doc")
+            .unwrap();
+        let filler = "x".repeat(400);
+        let values: Vec<String> = (0..rows).map(|n| format!("({n}, '{filler}{n}')")).collect();
+        db.execute(&format!(
+            "INSERT INTO Doc (n, body) VALUES {}",
+            values.join(", ")
+        ))
+        .unwrap();
+        db.execute("INSERT (a)-[:NEXT]->(b) FROM Doc a, Doc b WHERE a.n = 19998 AND b.n = 19999")
+            .unwrap();
+    }
+    let size = std::fs::metadata(dir.path().join(ratikdb::DATA_FILE))
+        .unwrap()
+        .len();
+    assert!(
+        size > 8 * 1024 * 1024,
+        "the data ({size} bytes) is far larger than the 1 MiB cache"
+    );
+    let db = Database::open_with(dir.path(), options).unwrap();
+    assert_eq!(strings(&db, "SELECT count(*) FROM Doc"), [rows.to_string()]);
+    assert_eq!(
+        strings(&db, "SELECT length(body) FROM Doc WHERE n = 12345"),
+        ["405"]
+    );
+    assert_eq!(
+        strings(&db, "SELECT b.n FROM (a:Doc {n: 19998})-[:NEXT]->(b)"),
+        ["19999"]
+    );
+    assert_eq!(
+        strings(&db, "SELECT count(*) FROM Doc WHERE n >= 19990"),
+        ["10"]
+    );
+    assert_eq!(db.stats().unwrap().nodes, rows);
+}
+
+#[test]
+fn failed_scripts_leave_nothing_on_disk() {
     let dir = tempfile::tempdir().unwrap();
     {
         let db = Database::open(dir.path()).unwrap();
-        db.execute("CREATE NODE T (v INT); INSERT INTO T (v) VALUES (1)")
+        db.execute("CREATE NODE T (v INT UNIQUE, s STRING SEARCHABLE)")
             .unwrap();
+        let failed = db.execute(
+            "INSERT INTO T (v, s) VALUES (1, 'alpha'); CREATE NODE U (); INSERT INTO T (v) VALUES (1)",
+        );
+        assert!(failed.is_err());
     }
-    // Simulate a crash mid-append. (The previous handle snapshotted on drop,
-    // so write a fresh record and then garbage after it.)
-    {
-        let db = Database::open(dir.path()).unwrap();
-        db.execute("INSERT INTO T (v) VALUES (2)").unwrap();
-        std::mem::forget(db); // no clean-shutdown snapshot
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .append(true)
-        .open(dir.path().join("wal.rtk"))
+    let db = Database::open(dir.path()).unwrap();
+    assert_eq!(strings(&db, "SELECT count(*) FROM T"), ["0"]);
+    assert!(
+        db.execute("SELECT * FROM U").is_err(),
+        "schema change rolled back too"
+    );
+    assert!(strings(&db, "SELECT v FROM T WHERE matches(s, 'alpha')").is_empty());
+    db.execute("INSERT INTO T (v, s) VALUES (1, 'alpha')")
         .unwrap();
-    f.write_all(&[200, 0, 0, 0, 1, 2, 3]).unwrap();
-    drop(f);
-    // The forgotten handle still holds the lock in this process; release by
-    // removing it is not possible, so reopen through a copy of the directory.
-    let copy = tempfile::tempdir().unwrap();
-    for name in ["snapshot.rtk", "wal.rtk"] {
-        let src = dir.path().join(name);
-        if src.exists() {
-            std::fs::copy(&src, copy.path().join(name)).unwrap();
-        }
-    }
-    let db = Database::open(copy.path()).unwrap();
-    assert_eq!(strings(&db, "SELECT v FROM T ORDER BY v"), ["1", "2"]);
-    db.execute("INSERT INTO T (v) VALUES (3)").unwrap();
-    drop(db);
-    let db = Database::open(copy.path()).unwrap();
-    assert_eq!(strings(&db, "SELECT count(*) FROM T"), ["3"]);
 }
 
 #[test]

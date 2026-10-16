@@ -417,10 +417,6 @@ impl Schema {
         self.next_type_id
     }
 
-    pub(crate) fn bump_type_id(&mut self, at_least: TypeId) {
-        self.next_type_id = self.next_type_id.max(at_least);
-    }
-
     pub(crate) fn insert(&mut self, def: TypeDef) {
         self.next_type_id = self.next_type_id.max(def.id + 1);
         self.by_name.insert(def.name.clone(), def.id);

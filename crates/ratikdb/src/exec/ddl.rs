@@ -87,7 +87,7 @@ pub(crate) fn drop_type(
             refs.join(", ")
         )));
     }
-    let count = txn.g.member_count(def.id);
+    let count = txn.g.member_count(def.id)?;
     if count > 0 {
         if !cascade {
             return Err(Error::schema(format!(
@@ -114,7 +114,7 @@ pub(crate) fn alter_add(
         Some(DefaultValue::Now) => Value::Int(now),
         None => Value::Null,
     };
-    if prop.not_null && fill.is_null() && txn.g.member_count(def.id) > 0 {
+    if prop.not_null && fill.is_null() && txn.g.member_count(def.id)? > 0 {
         return Err(Error::schema(format!(
             "cannot add NOT NULL property {name}.{} without a DEFAULT: {name} already has data",
             prop.name
@@ -212,11 +212,10 @@ pub(crate) fn create_query(
         )));
     }
     // Validate the body against the schema by running it with placeholder
-    // arguments inside a savepoint that is always rolled back.
+    // arguments in dry-run mode: everything is planned and checked, nothing
+    // is written.
     let dummies: Params = params.iter().map(|(n, t)| (n.clone(), dummy(t))).collect();
-    let sp = txn.savepoint();
-    let check = run_write(txn, &dummies, stmt, now, depth + 1);
-    txn.rollback_to(sp);
+    let check = txn.dry(|t| run_write(t, &dummies, stmt, now, depth + 1));
     check.map_err(|e| match e {
         Error::Query(m) if m.starts_with("missing value for parameter") => {
             Error::query(format!("{m} — declare it in the query signature"))

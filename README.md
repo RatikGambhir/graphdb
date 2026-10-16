@@ -42,7 +42,8 @@ ratik › SELECT f.name, k.since
 | **SQL-shaped** | `SELECT … FROM (u:User)-[:FOLLOWS]->(f) WHERE … GROUP BY … ORDER BY … LIMIT`. Plus `FROM User u` when you just want a table. |
 | **Graph + vectors + text** | HNSW vector indexes, BM25 full-text indexes, and B-tree property indexes, all planned together in one query. |
 | **Readable SDK** | `db.find("User").with("name", "Ada").outgoing("FOLLOWS").all()?` — remote or embedded, same API. |
-| **Durable** | Write-ahead log with checksummed records, atomic multi-statement transactions, automatic snapshots, crash-safe recovery. `F_FULLFSYNC` on macOS. |
+| **On disk, bigger than RAM** | Nodes, edges, adjacency and every index are B-trees in one file (`ratik.redb`). Queries read only the pages they touch through a bounded cache, so a 500 MB database answers an indexed lookup in ~10 MB of memory. |
+| **Durable** | ACID multi-statement transactions, crash-safe copy-on-write storage with checksums, `F_FULLFSYNC` on macOS. |
 | **Made for the Mac** | Universal binary, data in `~/Library/Application Support`, logs in `~/Library/Logs`, a launchd service in one command, and a Homebrew formula. |
 
 ## Install
@@ -71,18 +72,18 @@ scripts/build-macos.sh                     # on a Mac: arm64 + x86_64 + universa
 
 ```text
 ratik serve      run in the foreground (Ctrl-C stops gracefully)
-ratik start      run in the background          ratik stop       graceful stop + snapshot
+ratik start      run in the background          ratik stop       graceful stop
 ratik restart                                   ratik status     address, uptime, graph size
 ratik logs -f    follow the server log          ratik shell      interactive RQL prompt
 ratik query      one statement, table or --json ratik run        execute an .rql script atomically
-ratik schema     print the schema as RQL        ratik snapshot   compact the log now
+ratik schema     print the schema as RQL        ratik snapshot   flush + compact the file
 ratik init       write an example schema.rql    ratik service install|uninstall|print
 ```
 
 * `ratik service install` registers a **launchd agent** (`~/Library/LaunchAgents/com.ratikdb.ratik.plist`) that starts
   RatikDB at login and restarts it if it crashes — but not after a deliberate `ratik stop`. On Linux it writes a systemd
   user unit instead. Homebrew users can also use `brew services start ratikdb`.
-* Flags can come from the environment: `RATIK_DATA`, `RATIK_PORT`, `RATIK_HOST`, `RATIK_TOKEN`, `RATIK_URL`, `RATIK_LOG`.
+* Flags can come from the environment: `RATIK_DATA`, `RATIK_PORT`, `RATIK_HOST`, `RATIK_TOKEN`, `RATIK_URL`, `RATIK_CACHE_MB`, `RATIK_LOG`.
 * By default the server listens only on `127.0.0.1`. `--token` turns on bearer-token auth (do this before using
   `--host 0.0.0.0`), and browser cross-origin access stays off unless you pass `--cors <origin>`.
 * `ratik shell --data DIR` or `--memory` opens a database directly, without a server.
@@ -224,18 +225,24 @@ crates/
   ratikdb/     the engine — embeddable, no async, no network
     rql/       lexer → parser → AST
     exec/      name resolution against the schema, planner, pattern matcher, SELECT pipeline, writes, DDL
-    index/     B-tree property indexes · BM25 inverted index · HNSW vector index
-    graph.rs   in-memory adjacency store + invertible primitive ops
-    storage.rs write-ahead log + snapshots
+    graph.rs   the on-disk store: nodes, edges, adjacency, B-tree and BM25 indexes as redb tables
+    index/     BM25 scoring · HNSW vector index
   ratik-sdk/   the `ratik` Rust crate (DSL + RQL, remote or embedded)
   ratik-cli/   the `ratik` binary (axum server, web console, shell, process manager)
 ```
 
-* **Storage.** The graph lives in memory with adjacency lists on every node (index-free adjacency), which keeps traversals
-  fast. Every change is a small invertible *op*. A transaction applies its ops and appends them to the write-ahead log
-  as one CRC-checked record before acknowledging. If anything fails, the inverse ops roll it back. Snapshots compact the
-  log, and recovery replays the exact code paths that ran live. A torn record at the tail (from power loss mid-write) is
-  detected and discarded.
+* **Storage.** Everything lives in [redb](https://www.redb.org), a pure-Rust embedded B-tree engine (the Rust
+  counterpart of the LMDB engine HelixDB uses). It is compiled into the binary, so there is still nothing else to
+  install. Each kind of data is its own B-tree in a single file:
+  * nodes and edges;
+  * adjacency keyed `(node, edge type, edge)`, so "Ada's `FOLLOWS` edges" is one range scan;
+  * property indexes keyed by an order-preserving encoding of the value;
+  * BM25 postings and statistics.
+
+  Pages are read on demand through a bounded cache (`--cache-mb`, default 256), so memory use is set by that cache,
+  not by database size. Writes are copy-on-write with checksums. A transaction that fails is aborted and leaves
+  nothing behind, and a crash never corrupts the file. The schema is small and stays in memory. HNSW vector indexes
+  also live in memory, like most vector databases, and are rebuilt from the vectors on disk at startup.
 * **Planning.** Each pattern starts at its cheapest variable. The planner picks a unique or B-tree index lookup, an index
   range, a BM25 candidate set, an HNSW top-k (for `ORDER BY similarity(...) LIMIT k`), an edge-type scan, or a label
   scan. It then expands along adjacency lists. Every `WHERE` conjunct runs at the earliest step where its variables are

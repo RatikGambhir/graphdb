@@ -45,6 +45,9 @@ pub enum Error {
     /// Another process already holds the data directory.
     #[error("data directory is locked by another RatikDB process: {0}")]
     Locked(String),
+    /// The storage engine reported a failure.
+    #[error("storage error: {0}")]
+    Storage(String),
 }
 
 impl Error {
@@ -61,6 +64,7 @@ impl Error {
             Self::Io(_) => "io_error",
             Self::Corrupt(_) => "corrupt",
             Self::Locked(_) => "locked",
+            Self::Storage(_) => "storage_error",
         }
     }
 
@@ -78,6 +82,46 @@ impl Error {
 
     pub(crate) fn constraint(msg: impl Into<String>) -> Self {
         Self::Constraint(msg.into())
+    }
+}
+
+impl From<redb::StorageError> for Error {
+    fn from(e: redb::StorageError) -> Self {
+        match e {
+            redb::StorageError::Io(io) => Self::Io(io),
+            redb::StorageError::Corrupted(m) => Self::Corrupt(m),
+            other => Self::Storage(other.to_string()),
+        }
+    }
+}
+
+macro_rules! storage_errors {
+    ($($t:ty),*) => {$(
+        impl From<$t> for Error {
+            fn from(e: $t) -> Self {
+                redb::Error::from(e).into()
+            }
+        }
+    )*};
+}
+
+storage_errors!(
+    redb::TableError,
+    redb::TransactionError,
+    redb::CommitError,
+    redb::DatabaseError
+);
+
+impl From<redb::Error> for Error {
+    fn from(e: redb::Error) -> Self {
+        match e {
+            redb::Error::DatabaseAlreadyOpen => {
+                Self::Locked("the database file is open in another process".into())
+            }
+            redb::Error::Io(io) => Self::Io(io),
+            redb::Error::Corrupted(m) => Self::Corrupt(m),
+            other => Self::Storage(other.to_string()),
+        }
     }
 }
 
