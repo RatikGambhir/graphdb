@@ -299,18 +299,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             }
             let started = Instant::now();
             let rows = q.fetch()?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&rows.to_objects())?);
-            } else {
-                let rendered = table::render(&rows);
-                if !rendered.is_empty() {
-                    println!("{rendered}");
-                }
-                println!(
-                    "{}",
-                    table::footer(&rows, started.elapsed().as_secs_f64() * 1000.0)
-                );
-            }
+            shell::print(&rows, started.elapsed().as_secs_f64() * 1000.0, json, true);
         }
         Cmd::Run { file, conn } => {
             let script = std::fs::read_to_string(&file)

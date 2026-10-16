@@ -479,15 +479,19 @@ impl<'a> Compiler<'a> {
                     let var = self.scope.lookup(v).unwrap_or_default();
                     self.prop(var, name)?
                 }
-                Expr::Ident(v) if !self.aliases.contains(v) => {
-                    let mut names: Vec<&str> =
-                        self.scope.named().map(|(_, v)| v.name.as_str()).collect();
-                    names.extend(self.aliases.iter().map(String::as_str));
-                    return Err(Error::query(format!(
-                        "unknown variable '{v}'{}",
-                        hint(v, names)
-                    )));
-                }
+                Expr::Ident(v) if !self.aliases.contains(v) => match self.ident(v) {
+                    // `profile.rank`: a field inside a property of the only variable.
+                    Ok(prop @ CExpr::Prop { .. }) => CExpr::Field(Box::new(prop), name.clone()),
+                    _ => {
+                        let mut names: Vec<&str> =
+                            self.scope.named().map(|(_, v)| v.name.as_str()).collect();
+                        names.extend(self.aliases.iter().map(String::as_str));
+                        return Err(Error::query(format!(
+                            "unknown variable '{v}'{}",
+                            hint(v, names)
+                        )));
+                    }
+                },
                 other => CExpr::Field(Box::new(self.compile(other)?), name.clone()),
             },
             Expr::Index(a, b) => {

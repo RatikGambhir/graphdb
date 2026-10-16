@@ -56,45 +56,7 @@ impl Shell {
     }
 
     fn print(&self, rows: &Rows, ms: f64) {
-        if self.json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&rows.to_objects()).unwrap_or_default()
-            );
-            return;
-        }
-        // Status-only results (DDL) print as one friendly line.
-        if rows.columns == ["status"] {
-            for r in rows {
-                println!(
-                    "{}",
-                    brand::ok(&r.get::<String>("status").unwrap_or_default())
-                );
-            }
-            return;
-        }
-        if rows.columns == ["plan"] {
-            for r in rows {
-                println!(
-                    "  {}",
-                    brand::rgb(&r.get::<String>("plan").unwrap_or_default(), brand::CYAN)
-                );
-            }
-            return;
-        }
-        if rows.columns == ["ddl"] {
-            for r in rows {
-                println!("{}\n", r.get::<String>("ddl").unwrap_or_default());
-            }
-            return;
-        }
-        let rendered = table::render(rows);
-        if !rendered.is_empty() {
-            println!("{rendered}");
-        }
-        if self.timing || rows.columns.is_empty() {
-            println!("{}", table::footer(rows, ms));
-        }
+        print(rows, ms, self.json, self.timing);
     }
 
     fn meta(&mut self, cmd: &str) -> bool {
@@ -206,5 +168,49 @@ impl Shell {
         let _ = rl.save_history(&history);
         println!("{}", brand::dim("bye 👋"));
         Ok(())
+    }
+}
+
+/// Prints a result the friendly way: status lines, plans and DDL as text,
+/// everything else as a table (or JSON).
+pub fn print(rows: &Rows, ms: f64, json: bool, timing: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&rows.to_objects()).unwrap_or_default()
+        );
+        return;
+    }
+    // Status-only results (DDL) print as one friendly line.
+    if rows.columns == ["status"] {
+        for r in rows {
+            println!(
+                "{}",
+                brand::ok(&r.get::<String>("status").unwrap_or_default())
+            );
+        }
+        return;
+    }
+    if rows.columns == ["plan"] {
+        for r in rows {
+            println!(
+                "  {}",
+                brand::rgb(&r.get::<String>("plan").unwrap_or_default(), brand::CYAN)
+            );
+        }
+        return;
+    }
+    if rows.columns == ["ddl"] {
+        for r in rows {
+            println!("{}\n", r.get::<String>("ddl").unwrap_or_default());
+        }
+        return;
+    }
+    let rendered = table::render(rows);
+    if !rendered.is_empty() {
+        println!("{rendered}");
+    }
+    if timing || rows.columns.is_empty() {
+        println!("{}", table::footer(rows, ms));
     }
 }

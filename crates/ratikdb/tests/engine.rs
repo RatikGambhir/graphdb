@@ -412,3 +412,26 @@ fn torn_wal_tail_is_ignored() {
     let db = Database::open(copy.path()).unwrap();
     assert_eq!(strings(&db, "SELECT count(*) FROM T"), ["3"]);
 }
+
+#[test]
+fn json_fields_and_list_indexing() {
+    let db = Database::in_memory();
+    db.execute(
+        "CREATE NODE Doc (name STRING, meta JSON, tags STRING[]);
+         INSERT INTO Doc {name: 'a', meta: {owner: {team: 'core'}}, tags: ['x', 'y']}",
+    )
+    .unwrap();
+    assert_eq!(
+        strings(
+            &db,
+            "SELECT meta.owner.team, tags[1], tags[-1], length(tags) FROM Doc"
+        ),
+        ["core|y|y|2"]
+    );
+    assert!(
+        db.execute("SELECT nope.field FROM Doc")
+            .unwrap_err()
+            .to_string()
+            .contains("unknown variable 'nope'")
+    );
+}
