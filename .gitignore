@@ -1,0 +1,8 @@
+/target
+*.rtk
+*.rtk.tmp
+LOCK
+/ratik-data/
+.DS_Store
+node_modules/
+__pycache__/

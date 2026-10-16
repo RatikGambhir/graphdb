@@ -1,0 +1,7 @@
+[package]
+name = "ratik-cli"
+version.workspace = true
+edition.workspace = true
+[[bin]]
+name = "ratik"
+path = "src/main.rs"

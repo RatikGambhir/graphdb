@@ -1,0 +1,33 @@
+[package]
+name = "ratik"
+description = "The RatikDB Rust SDK: a readable query DSL for the RatikDB graph database (remote or embedded)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["remote"]
+## Talk to a `ratik` server over HTTP.
+remote = ["dep:ureq"]
+## HTTPS support for remote connections.
+tls = ["remote", "ureq/rustls"]
+## Run the database inside your process — no server at all.
+embedded = ["dep:ratikdb"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ureq = { version = "3", default-features = false, features = ["json"], optional = true }
+ratikdb = { workspace = true, optional = true }
+
+[dev-dependencies]
+ratikdb.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
