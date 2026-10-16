@@ -1,0 +1,33 @@
+[package]
+name = "nexa"
+description = "The NexaDB Rust SDK: a readable query DSL for the NexaDB graph database (remote or embedded)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["remote"]
+## Talk to a `nexa` server over HTTP.
+remote = ["dep:ureq"]
+## HTTPS support for remote connections.
+tls = ["remote", "ureq/rustls"]
+## Run the database inside your process — no server at all.
+embedded = ["dep:nexadb"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ureq = { version = "3", default-features = false, features = ["json"], optional = true }
+nexadb = { workspace = true, optional = true }
+
+[dev-dependencies]
+nexadb.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true

@@ -100,7 +100,7 @@ impl Atlas {
             state_block(
                 spinner("graph-spinner", 22., t.accent).into_any_element(),
                 "Syncing graph data",
-                "Loading the current nodes and relationships from RatikDB…".to_owned(),
+                "Loading the current nodes and relationships from NexaDB…".to_owned(),
                 None,
                 cx,
             )
@@ -467,7 +467,7 @@ fn render_welcome(cx: &mut Context<Atlas>) -> AnyElement {
                                         .text_size(px(13.))
                                         .line_height(px(23.))
                                         .text_color(t.ink_secondary)
-                                        .child("Bring your RatikDB graph into focus. Follow relationships, ask better questions, change what you find, and see how everything fits together."),
+                                        .child("Bring your NexaDB graph into focus. Follow relationships, ask better questions, change what you find, and see how everything fits together."),
                                 )
                                 .child(
                                     div().child(
@@ -497,9 +497,9 @@ fn render_welcome(cx: &mut Context<Atlas>) -> AnyElement {
                         .pt(px(24.))
                         .border_t_1()
                         .border_color(t.border)
-                        .child(step("database", "01 / CONNECT", "Start with your server", "One connection to your RatikDB data."))
+                        .child(step("database", "01 / CONNECT", "Start with your server", "One connection to your NexaDB data."))
                         .child(step("network", "02 / EXPLORE", "Follow the relationships", "Pan, zoom, and expand your network."))
-                        .child(step("terminal-square", "03 / CHANGE", "Ask, then act", "Use RQL to find what matters and to write it.")),
+                        .child(step("terminal-square", "03 / CHANGE", "Ask, then act", "Use NQL to find what matters and to write it.")),
                 ),
         )
         .into_any_element()

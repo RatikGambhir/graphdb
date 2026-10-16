@@ -17,17 +17,17 @@ pub struct Settings {
     pub theme: Option<String>,
 }
 
-/// `~/Library/Application Support/Ratik Atlas/settings.json` on macOS, the
+/// `~/Library/Application Support/Nexa Atlas/settings.json` on macOS, the
 /// XDG config directory elsewhere.
 #[must_use]
 pub fn settings_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from)?;
     let dir = if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Ratik Atlas")
+        home.join("Library/Application Support/Nexa Atlas")
     } else if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg).join("ratik-atlas")
+        PathBuf::from(xdg).join("nexa-atlas")
     } else {
-        home.join(".config/ratik-atlas")
+        home.join(".config/nexa-atlas")
     };
     Some(dir.join("settings.json"))
 }

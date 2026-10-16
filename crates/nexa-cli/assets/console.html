@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexaDB Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238b5cf6'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 4 58 19v26L32 60 6 45V19z' fill='url(%23g)'/%3E%3Ccircle cx='22' cy='24' r='5' fill='%230b0b14'/%3E%3Ccircle cx='42' cy='26' r='5' fill='%230b0b14'/%3E%3Ccircle cx='30' cy='42' r='5' fill='%230b0b14'/%3E%3Cpath d='M22 24 42 26 30 42z' stroke='%230b0b14' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0b0b14; --panel: #12121f; --panel-2: #181829; --line: #26263d;
+  --text: #e7e7f3; --muted: #8b8ba7; --violet: #8b5cf6; --cyan: #22d3ee;
+  --volt: #a3e635; --ember: #fb7185; --amber: #fbbf24;
+  --grad: linear-gradient(90deg, var(--violet), var(--cyan));
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f7f7fb; --panel: #ffffff; --panel-2: #f0f0f7; --line: #e2e2ee;
+    --text: #15151f; --muted: #6b6b85;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .3px; font-size: 17px; }
+.logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tag { color: var(--muted); font-size: 12px; }
+.pill { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 10px currentColor; }
+.dot.on { background: var(--volt); }
+input.token { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 10px; width: 160px; font: 12px var(--mono); }
+main { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 57px); }
+aside { border-right: 1px solid var(--line); padding: 16px; overflow: auto; background: var(--panel); }
+aside h3 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+.type { padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
+.type:hover { background: var(--panel-2); border-color: var(--line); }
+.type b { font-family: var(--mono); }
+.type small { color: var(--muted); float: right; font-family: var(--mono); }
+.props { color: var(--muted); font: 12px var(--mono); margin-top: 2px; word-break: break-word; }
+section.work { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.editor { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.editor::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--grad); }
+textarea { width: 100%; min-height: 150px; resize: vertical; border: 0; outline: 0; padding: 16px; background: transparent; color: var(--text); font: 14px/1.6 var(--mono); }
+.bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel-2); }
+button { border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; color: #0b0b14; background: var(--grad); }
+button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+button:disabled { opacity: .5; cursor: wait; }
+.hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+.tabs { display: flex; gap: 6px; }
+.tabs button { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 5px 12px; }
+.tabs button.active { color: var(--text); border-color: var(--violet); }
+.out { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: auto; max-height: 62vh; }
+table { border-collapse: collapse; width: 100%; font: 13px var(--mono); }
+th { text-align: left; position: sticky; top: 0; background: var(--panel-2); padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--cyan); font-weight: 600; }
+td { padding: 7px 12px; border-bottom: 1px solid var(--line); vertical-align: top; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.num { color: var(--cyan); text-align: right; }
+td.null { color: var(--muted); font-style: italic; }
+td.el { color: var(--violet); }
+.meta { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+.error { color: var(--ember); padding: 14px 16px; font-family: var(--mono); white-space: pre-wrap; }
+.status { color: var(--volt); padding: 14px 16px; font-family: var(--mono); }
+canvas { width: 100%; height: 460px; display: block; }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } .tag { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><path d="M32 4 58 19v26L32 60 6 45V19z" fill="url(#lg)"/><circle cx="22" cy="24" r="5" fill="#0b0b14"/><circle cx="42" cy="26" r="5" fill="#0b0b14"/><circle cx="30" cy="42" r="5" fill="#0b0b14"/><path d="M22 24 42 26 30 42z" stroke="#0b0b14" stroke-width="3" fill="none"/></svg>
+    <span>NexaDB</span>
+  </div>
+  <div class="tag">Graphs at the speed of thought.</div>
+  <div class="pill"><span class="dot" id="dot"></span><span id="health">connecting…</span>
+    <input class="token" id="token" placeholder="API token (optional)" type="password" autocomplete="off"></div>
+</header>
+<main>
+  <aside>
+    <h3>Node types</h3><div id="nodes"></div>
+    <h3>Edge types</h3><div id="edges"></div>
+    <h3>Stored queries</h3><div id="queries"></div>
+  </aside>
+  <section class="work">
+    <div class="editor">
+      <textarea id="q" spellcheck="false">SHOW NODES;</textarea>
+      <div class="bar">
+        <button id="run">Run ▸</button>
+        <button class="ghost" id="explain">Explain</button>
+        <div class="tabs"><button id="tab-table" class="active">Table</button><button id="tab-graph">Graph</button><button id="tab-json">JSON</button></div>
+        <span class="hint">⌘/Ctrl + Enter to run</span>
+      </div>
+    </div>
+    <div class="meta" id="meta"></div>
+    <div class="out" id="out"><div class="empty">Write some NQL and press Run.</div></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let last = null, view = "table", sim = null;
+const tokenBox = $("token");
+try { tokenBox.value = localStorage.getItem("nexa.token") || ""; } catch (_) {}
+tokenBox.addEventListener("change", () => { try { localStorage.setItem("nexa.token", tokenBox.value); } catch (_) {} refresh(); });
+
+function headers() {
+  const h = { "content-type": "application/json" };
+  if (tokenBox.value) h.authorization = "Bearer " + tokenBox.value;
+  return h;
+}
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? { headers: headers() } : { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json.error && json.error.message) || ("HTTP " + res.status));
+  return json;
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const isEl = (v) => v && typeof v === "object" && !Array.isArray(v) && "_id" in v && "_label" in v;
+function short(v) {
+  if (v === null) return "NULL";
+  if (isEl(v)) {
+    const props = Object.entries(v).filter(([k, x]) => !k.startsWith("_") && x !== null).map(([k, x]) => k + ": " + JSON.stringify(x)).join(", ");
+    return "_from" in v ? `[${v._label}#${v._id} ${v._from}→${v._to}]` : `(${v._label}#${v._id} {${props}})`;
+  }
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+
+async function refresh() {
+  try {
+    const h = await api("/v1/health");
+    $("dot").classList.add("on"); $("health").textContent = "v" + h.version;
+    const s = await api("/v1/schema");
+    const render = (kind) => s.types.filter((t) => t.kind === kind).map((t) =>
+      `<div class="type" data-name="${esc(t.name)}" data-kind="${kind}"><b>${esc(t.name)}</b><small>${t.count}</small>
+       <div class="props">${kind === "edge" ? esc(t.from.join("|") + " → " + t.to.join("|")) + "<br>" : ""}${t.properties.map((p) => esc(p.name + " " + p.type)).join(", ") || "—"}</div></div>`).join("") || '<div class="props">none yet</div>';
+    $("nodes").innerHTML = render("node"); $("edges").innerHTML = render("edge");
+    $("queries").innerHTML = s.queries.map((q) => `<div class="type" data-call="${esc(q.name)}" data-params="${esc(q.params.map((p) => p.name).join(","))}"><b>${esc(q.name)}</b><div class="props">${esc(q.params.map((p) => "$" + p.name + " " + p.type).join(", "))}</div></div>`).join("") || '<div class="props">none yet</div>';
+  } catch (e) {
+    $("dot").classList.remove("on"); $("health").textContent = e.message.includes("token") ? "token required" : "offline";
+  }
+}
+document.querySelector("aside").addEventListener("click", (e) => {
+  const el = e.target.closest(".type"); if (!el) return;
+  if (el.dataset.call) {
+    const args = el.dataset.params ? el.dataset.params.split(",").map(() => "?").join(", ") : "";
+    $("q").value = `CALL ${el.dataset.call}(${args});`;
+  } else if (el.dataset.kind === "edge") {
+    $("q").value = `SELECT a, e, b FROM (a)-[e:${el.dataset.name}]->(b) LIMIT 50;`;
+  } else {
+    $("q").value = `SELECT * FROM ${el.dataset.name} LIMIT 50;`;
+  }
+  run();
+});
+
+async function run(prefix) {
+  const query = (prefix || "") + $("q").value;
+  $("run").disabled = true; $("meta").textContent = "running…";
+  try {
+    last = await api("/v1/query", { query });
+    const s = last.stats, bits = [last.rows.length + " row" + (last.rows.length === 1 ? "" : "s"), last.time_ms.toFixed(2) + " ms"];
+    for (const [k, label] of [["nodes_created", "+%d nodes"], ["edges_created", "+%d edges"], ["nodes_deleted", "−%d nodes"], ["edges_deleted", "−%d edges"], ["properties_set", "%d props set"], ["schema_changes", "%d schema changes"]]) if (s[k]) bits.push(label.replace("%d", s[k]));
+    $("meta").textContent = bits.join(" · ");
+    if (s.schema_changes || s.nodes_created || s.nodes_deleted || s.edges_created || s.edges_deleted) refresh();
+    if (view === "graph" && !hasElements(last)) view = "table";
+    if (view === "table" && hasElements(last) && !prefix && last.rows.length > 1 && last.columns.length > 1) { /* keep table by default */ }
+    show();
+  } catch (e) {
+    last = null; $("meta").textContent = ""; $("out").innerHTML = `<div class="error">✘ ${esc(e.message)}</div>`;
+  } finally { $("run").disabled = false; }
+}
+const hasElements = (r) => r && r.rows.some((row) => row.some((v) => isEl(v) || (Array.isArray(v) && v.some(isEl))));
+
+function show() {
+  ["table", "graph", "json"].forEach((t) => $("tab-" + t).classList.toggle("active", t === view));
+  if (sim) { cancelAnimationFrame(sim); sim = null; }
+  if (!last) return;
+  if (last.columns.length === 1 && ["status", "plan", "ddl"].includes(last.columns[0]) && view === "table") {
+    const cls = last.columns[0] === "status" ? "status" : "meta";
+    $("out").innerHTML = `<div class="${cls}" style="padding:14px 16px;white-space:pre-wrap">${last.rows.map((r) => esc(r[0])).join("\n")}</div>`;
+    return;
+  }
+  if (view === "json") {
+    const objs = last.rows.map((r) => Object.fromEntries(last.columns.map((c, i) => [c, r[i]])));
+    $("out").innerHTML = `<pre style="margin:0;padding:16px;font:13px var(--mono)">${esc(JSON.stringify(objs, null, 2))}</pre>`;
+    return;
+  }
+  if (view === "graph") return drawGraph();
+  if (!last.columns.length) { $("out").innerHTML = '<div class="status">✔ done</div>'; return; }
+  const head = last.columns.map((c) => `<th>${esc(c)}</th>`).join("");
+  const body = last.rows.map((r) => "<tr>" + r.map((v) => {
+    const cls = v === null ? "null" : typeof v === "number" ? "num" : isEl(v) ? "el" : "";
+    return `<td class="${cls}" title="${esc(short(v))}">${esc(short(v))}</td>`;
+  }).join("") + "</tr>").join("");
+  $("out").innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body || ""}</tbody></table>` + (last.rows.length ? "" : '<div class="empty">no rows</div>');
+}
+
+function drawGraph() {
+  const nodes = new Map(), links = [];
+  const visit = (v) => {
+    if (Array.isArray(v)) return v.forEach(visit);
+    if (!isEl(v)) return;
+    if ("_from" in v) links.push(v); else if (!nodes.has(v._id)) nodes.set(v._id, { ...v, x: Math.random() * 600, y: Math.random() * 400, vx: 0, vy: 0 });
+  };
+  last.rows.forEach((r) => r.forEach(visit));
+  for (const l of links) for (const id of [l._from, l._to]) if (!nodes.has(id)) nodes.set(id, { _id: id, _label: "?", x: Math.random() * 600, y: Math.random() * 400, vx: 0, vy: 0 });
+  if (!nodes.size) { $("out").innerHTML = '<div class="empty">No nodes or edges in this result. Try SELECT a, e, b FROM (a)-[e]->(b)</div>'; return; }
+  $("out").innerHTML = "<canvas id='cv'></canvas>";
+  const cv = $("cv"), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+  const list = [...nodes.values()];
+  const labels = [...new Set(list.map((n) => n._label))];
+  const palette = ["#8b5cf6", "#22d3ee", "#a3e635", "#fbbf24", "#fb7185", "#60a5fa", "#f472b6"];
+  const color = (l) => palette[labels.indexOf(l) % palette.length];
+  const name = (n) => n.name || n.title || n._label + "#" + n._id;
+  const css = getComputedStyle(document.documentElement);
+  let ticks = 0;
+  const step = () => {
+    for (const a of list) {
+      a.vx += (W / 2 - a.x) * 0.002; a.vy += (H / 2 - a.y) * 0.002;
+      for (const b of list) if (a !== b) {
+        const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 0.01;
+        if (d2 < 40000) { const f = 600 / d2; a.vx += dx * f; a.vy += dy * f; }
+      }
+    }
+    for (const l of links) {
+      const a = nodes.get(l._from), b = nodes.get(l._to), dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - 110) * 0.01;
+      a.vx += dx / d * f; a.vy += dy / d * f; b.vx -= dx / d * f; b.vy -= dy / d * f;
+    }
+    for (const n of list) { n.vx *= 0.85; n.vy *= 0.85; n.x = Math.max(20, Math.min(W - 20, n.x + n.vx)); n.y = Math.max(20, Math.min(H - 20, n.y + n.vy)); }
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 1.5; ctx.font = "11px " + css.getPropertyValue("--mono");
+    for (const l of links) {
+      const a = nodes.get(l._from), b = nodes.get(l._to);
+      const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y); g.addColorStop(0, "#8b5cf6aa"); g.addColorStop(1, "#22d3eeaa");
+      ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const ang = Math.atan2(b.y - a.y, b.x - a.x), tx = b.x - Math.cos(ang) * 13, ty = b.y - Math.sin(ang) * 13;
+      ctx.fillStyle = "#22d3ee"; ctx.beginPath(); ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - Math.cos(ang - 0.4) * 8, ty - Math.sin(ang - 0.4) * 8); ctx.lineTo(tx - Math.cos(ang + 0.4) * 8, ty - Math.sin(ang + 0.4) * 8); ctx.fill();
+      ctx.fillStyle = css.getPropertyValue("--muted"); ctx.fillText(l._label, (a.x + b.x) / 2 + 4, (a.y + b.y) / 2 - 4);
+    }
+    for (const n of list) {
+      ctx.fillStyle = color(n._label); ctx.shadowColor = color(n._label); ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(n.x, n.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = css.getPropertyValue("--text"); ctx.fillText(name(n), n.x + 13, n.y + 4);
+    }
+    if (++ticks < 400) sim = requestAnimationFrame(step);
+  };
+  step();
+}
+
+$("run").onclick = () => run();
+$("explain").onclick = () => run("EXPLAIN ");
+$("tab-table").onclick = () => { view = "table"; show(); };
+$("tab-graph").onclick = () => { view = "graph"; show(); };
+$("tab-json").onclick = () => { view = "json"; show(); };
+$("q").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); } });
+refresh();
+</script>
+</body>
+</html>

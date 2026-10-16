@@ -2,7 +2,7 @@
 *.rtk
 *.rtk.tmp
 LOCK
-/ratik-data/
+/nexa-data/
 .DS_Store
 node_modules/
 __pycache__/

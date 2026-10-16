@@ -701,6 +701,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexa"
+version = "0.1.0"
+dependencies = [
+ "nexadb",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
+name = "nexa-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "nexa",
+ "nexadb",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+]
+
+[[package]]
+name = "nexadb"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "postcard",
+ "redb",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "nibble_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -842,52 +888,6 @@ checksum = "3b4431027dcd37fc2a73ef740b5f233aa805897935b8bce0195e41bbf9a3289a"
 dependencies = [
  "endian-type",
  "nibble_vec",
-]
-
-[[package]]
-name = "ratik"
-version = "0.1.0"
-dependencies = [
- "ratikdb",
- "serde",
- "serde_json",
- "thiserror",
- "ureq",
-]
-
-[[package]]
-name = "ratik-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "ratik",
- "ratikdb",
- "rustyline",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "ureq",
-]
-
-[[package]]
-name = "ratikdb"
-version = "0.1.0"
-dependencies = [
- "parking_lot",
- "postcard",
- "redb",
- "rustc-hash",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
 ]
 
 [[package]]

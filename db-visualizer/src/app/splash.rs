@@ -1,4 +1,4 @@
-//! The welcome splash: a valid RQL graph query types itself into an editor
+//! The welcome splash: a valid NQL graph query types itself into an editor
 //! window while a progress bar fills, then a Continue button enters the app.
 
 use std::time::Duration;
@@ -9,7 +9,7 @@ use gpui::{
 };
 
 use super::ContinueSplash;
-use crate::rql::{PreviewKind, SPLASH_PREVIEW};
+use crate::nql::{PreviewKind, SPLASH_PREVIEW};
 use crate::theme::{FONT_MONO, FONT_UI, theme};
 use crate::ui::{Button, ButtonKind, icon, spaced};
 
@@ -81,7 +81,7 @@ impl Splash {
 
     fn task_label(&self) -> &'static str {
         if self.progress < 34. {
-            "Preparing RQL"
+            "Preparing NQL"
         } else if self.progress < 70. {
             "Restoring workspace"
         } else {
@@ -197,7 +197,7 @@ impl Render for Splash {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_size(px(9.))
                             .text_color(t.ink_muted)
-                            .child(spaced("GRAPH QUERY · RQL".into())),
+                            .child(spaced("GRAPH QUERY · NQL".into())),
                     )
                     .child(div().w(px(60.))),
             )
@@ -272,7 +272,7 @@ impl Render for Splash {
                                     .gap(px(9.))
                                     .text_size(px(38.))
                                     .line_height(px(40.))
-                                    .child(div().font_weight(FontWeight::EXTRA_BOLD).child("Ratik"))
+                                    .child(div().font_weight(FontWeight::EXTRA_BOLD).child("Nexa"))
                                     .child(
                                         div()
                                             .font_weight(FontWeight::NORMAL)
@@ -294,7 +294,7 @@ impl Render for Splash {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_size(px(10.))
                                     .text_color(t.ink_muted)
-                                    .child(spaced("GRAPH DATA WORKBENCH · RQL".into())),
+                                    .child(spaced("GRAPH DATA WORKBENCH · NQL".into())),
                             ),
                     )
                     .child(window_frame)

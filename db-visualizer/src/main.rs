@@ -1,6 +1,6 @@
-//! Ratik Atlas: a desktop graph explorer for RatikDB, built with GPUI.
+//! Nexa Atlas: a desktop graph explorer for NexaDB, built with GPUI.
 //!
-//! Query with RQL, browse the declared schema, draw the graph, inspect any
+//! Query with NQL, browse the declared schema, draw the graph, inspect any
 //! node or edge, and write: inserts, updates and deletes run as explicit,
 //! atomic transactions.
 
@@ -9,7 +9,7 @@ mod assets;
 mod client;
 mod graph;
 mod results;
-mod rql;
+mod nql;
 mod schema;
 mod settings;
 mod theme;
@@ -32,13 +32,13 @@ fn main() {
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus(vec![
                 Menu {
-                    name: "Ratik Atlas".into(),
+                    name: "Nexa Atlas".into(),
                     items: vec![
                         MenuItem::action("Connection…", OpenConnection),
                         MenuItem::separator(),
                         MenuItem::os_submenu("Services", SystemMenuType::Services),
                         MenuItem::separator(),
-                        MenuItem::action("Quit Ratik Atlas", Quit),
+                        MenuItem::action("Quit Nexa Atlas", Quit),
                     ],
                 },
                 Menu {
@@ -57,17 +57,17 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Ratik Atlas".into()),
+                        title: Some("Nexa Atlas".into()),
                         ..Default::default()
                     }),
                     window_min_size: Some(size(px(960.), px(640.))),
-                    app_id: Some("com.ratikdb.atlas".into()),
+                    app_id: Some("com.nexadb.atlas".into()),
                     ..Default::default()
                 },
                 |window, cx| cx.new(|cx| Atlas::new(window, cx)),
             );
             if let Err(error) = window {
-                eprintln!("ratik-atlas: could not open a window: {error}");
+                eprintln!("nexa-atlas: could not open a window: {error}");
                 cx.quit();
                 return;
             }

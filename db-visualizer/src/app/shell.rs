@@ -92,7 +92,7 @@ impl Atlas {
                             .child(
                                 div()
                                     .flex()
-                                    .child(div().font_weight(FontWeight::SEMIBOLD).child("Ratik"))
+                                    .child(div().font_weight(FontWeight::SEMIBOLD).child("Nexa"))
                                     .child(
                                         div()
                                             .font_weight(FontWeight::NORMAL)
@@ -290,7 +290,7 @@ impl Atlas {
         };
         let left = match &self.status {
             Status::Connected { .. } => format!(
-                "RatikDB workspace · {}",
+                "NexaDB workspace · {}",
                 self.connection
                     .as_ref()
                     .map(|c| c.query_endpoint())
@@ -328,7 +328,7 @@ impl Atlas {
                     .flex()
                     .gap(px(6.))
                     .whitespace_nowrap()
-                    .child("RQL")
+                    .child("NQL")
                     .child(div().opacity(0.5).child("/"))
                     .child(workspace),
             )

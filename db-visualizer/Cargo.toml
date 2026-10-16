@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
-description = "Ratik Atlas: a GPUI desktop graph explorer for RatikDB"
-default-run = "ratik-atlas"
+description = "Nexa Atlas: a GPUI desktop graph explorer for NexaDB"
+default-run = "nexa-atlas"
 
 [[bin]]
-name = "ratik-atlas"
+name = "nexa-atlas"
 path = "src/main.rs"
 
 [dependencies]

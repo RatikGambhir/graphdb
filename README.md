@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="RatikDB" width="420">
+<img src="assets/logo.svg" alt="NexaDB" width="420">
 
 ### Graphs at the speed of thought.
 
-**RatikDB** is a strictly-typed graph database with built-in **vector search** and **BM25 full-text search**,
-queried with **RQL** — SQL you already know, plus graph patterns — or with a **Rust DSL that reads like English**.
+**NexaDB** is a strictly-typed graph database with built-in **vector search** and **BM25 full-text search**,
+queried with **NQL** — SQL you already know, plus graph patterns — or with a **Rust DSL that reads like English**.
 
-It ships as **one binary**. No Docker, no JVM, no container runtime: download `ratik`, run it.
+It ships as **one binary**. No Docker, no JVM, no container runtime: download `nexa`, run it.
 
 `macOS (Apple Silicon + Intel)` · `Linux` · `Rust 2024` · `Apache-2.0`
 
@@ -16,14 +16,14 @@ It ships as **one binary**. No Docker, no JVM, no container runtime: download `r
 ---
 
 ```console
-$ ratik init && ratik start --apply schema.rql
-◆ RatikDB is up
+$ nexa init && nexa start --apply schema.nql
+◆ NexaDB is up
   api        http://127.0.0.1:7285
   console    http://127.0.0.1:7285/
-  data       ~/Library/Application Support/RatikDB
+  data       ~/Library/Application Support/NexaDB
 
-$ ratik shell
-ratik › SELECT f.name, k.since
+$ nexa shell
+nexa › SELECT f.name, k.since
    ...  FROM (p:Person {name: 'Ada Lovelace'})-[k:KNOWS]->(f);
 ╭─────────────────┬─────────╮
 │ f.name          │ k.since │
@@ -33,16 +33,16 @@ ratik › SELECT f.name, k.since
 1 row · 0.41 ms
 ```
 
-## Why RatikDB
+## Why NexaDB
 
 | | |
 |---|---|
-| **One binary** | `ratik` is the server, the shell, the web console, and the process manager. Copy it anywhere and run it. |
+| **One binary** | `nexa` is the server, the shell, the web console, and the process manager. Copy it anywhere and run it. |
 | **Strict schema** | Every node type, edge type and property is declared first. Typos fail fast with a fix: *"User has no property 'agee' — did you mean 'age'?"* |
 | **SQL-shaped** | `SELECT … FROM (u:User)-[:FOLLOWS]->(f) WHERE … GROUP BY … ORDER BY … LIMIT`. Plus `FROM User u` when you just want a table. |
 | **Graph + vectors + text** | HNSW vector indexes, BM25 full-text indexes, and B-tree property indexes, all planned together in one query. |
 | **Readable SDK** | `db.find("User").with("name", "Ada").outgoing("FOLLOWS").all()?` — remote or embedded, same API. |
-| **On disk, bigger than RAM** | Nodes, edges, adjacency and every index are B-trees in one file (`ratik.redb`). Queries read only the pages they touch through a bounded cache, so a 500 MB database answers an indexed lookup in ~10 MB of memory. |
+| **On disk, bigger than RAM** | Nodes, edges, adjacency and every index are B-trees in one file (`nexa.redb`). Queries read only the pages they touch through a bounded cache, so a 500 MB database answers an indexed lookup in ~10 MB of memory. |
 | **Durable** | ACID multi-statement transactions, crash-safe copy-on-write storage with checksums, `F_FULLFSYNC` on macOS. |
 | **Made for the Mac** | Universal binary, data in `~/Library/Application Support`, logs in `~/Library/Logs`, a launchd service in one command, and a Homebrew formula. |
 
@@ -51,8 +51,8 @@ ratik › SELECT f.name, k.since
 **Homebrew** (macOS):
 
 ```sh
-brew tap ratikgambhir/ratikdb https://github.com/RatikGambhir/graphdb
-brew install --HEAD ratikgambhir/ratikdb/ratikdb
+brew tap ratikgambhir/nexadb https://github.com/RatikGambhir/graphdb
+brew install --HEAD ratikgambhir/nexadb/nexadb
 ```
 
 **Install script** (macOS universal binary / Linux x86_64, from GitHub releases):
@@ -64,36 +64,36 @@ curl -fsSL https://raw.githubusercontent.com/RatikGambhir/graphdb/main/scripts/i
 **From source** (any platform with Rust 1.89+):
 
 ```sh
-cargo install --path crates/ratik-cli      # puts `ratik` in ~/.cargo/bin
+cargo install --path crates/nexa-cli      # puts `nexa` in ~/.cargo/bin
 scripts/build-macos.sh                     # on a Mac: arm64 + x86_64 + universal tarballs in dist/
 ```
 
-## The `ratik` CLI
+## The `nexa` CLI
 
 ```text
-ratik serve      run in the foreground (Ctrl-C stops gracefully)
-ratik start      run in the background          ratik stop       graceful stop
-ratik restart                                   ratik status     address, uptime, graph size
-ratik logs -f    follow the server log          ratik shell      interactive RQL prompt
-ratik query      one statement, table or --json ratik run        execute an .rql script atomically
-ratik schema     print the schema as RQL        ratik snapshot   flush + compact the file
-ratik init       write an example schema.rql    ratik service install|uninstall|print
+nexa serve      run in the foreground (Ctrl-C stops gracefully)
+nexa start      run in the background          nexa stop       graceful stop
+nexa restart                                   nexa status     address, uptime, graph size
+nexa logs -f    follow the server log          nexa shell      interactive NQL prompt
+nexa query      one statement, table or --json nexa run        execute an .nql script atomically
+nexa schema     print the schema as NQL        nexa snapshot   flush + compact the file
+nexa init       write an example schema.nql    nexa service install|uninstall|print
 ```
 
-* `ratik service install` registers a **launchd agent** (`~/Library/LaunchAgents/com.ratikdb.ratik.plist`) that starts
-  RatikDB at login and restarts it if it crashes — but not after a deliberate `ratik stop`. On Linux it writes a systemd
-  user unit instead. Homebrew users can also use `brew services start ratikdb`.
-* Flags can come from the environment: `RATIK_DATA`, `RATIK_PORT`, `RATIK_HOST`, `RATIK_TOKEN`, `RATIK_URL`, `RATIK_CACHE_MB`, `RATIK_LOG`.
+* `nexa service install` registers a **launchd agent** (`~/Library/LaunchAgents/com.nexadb.nexa.plist`) that starts
+  NexaDB at login and restarts it if it crashes — but not after a deliberate `nexa stop`. On Linux it writes a systemd
+  user unit instead. Homebrew users can also use `brew services start nexadb`.
+* Flags can come from the environment: `NEXA_DATA`, `NEXA_PORT`, `NEXA_HOST`, `NEXA_TOKEN`, `NEXA_URL`, `NEXA_CACHE_MB`, `NEXA_LOG`.
 * By default the server listens only on `127.0.0.1`. `--token` turns on bearer-token auth (do this before using
   `--host 0.0.0.0`), and browser cross-origin access stays off unless you pass `--cors <origin>`.
-* `ratik shell --data DIR` or `--memory` opens a database directly, without a server.
+* `nexa shell --data DIR` or `--memory` opens a database directly, without a server.
 
 Open **http://127.0.0.1:7285/** for the built-in console: a query editor, a schema browser, result tables, and a live
 graph view.
 
-## RQL in five minutes
+## NQL in five minutes
 
-The full reference is in [docs/RQL.md](docs/RQL.md).
+The full reference is in [docs/NQL.md](docs/NQL.md).
 
 ```sql
 -- 1. Declare everything first. Nothing undeclared can be written or read.
@@ -141,15 +141,15 @@ EXPLAIN SELECT * FROM User WHERE age > 40;          -- see which index is used
 
 ```toml
 [dependencies]
-ratik = { git = "https://github.com/RatikGambhir/graphdb" }                          # talk to a server
-# ratik = { git = "...", default-features = false, features = ["embedded"] }        # or run in-process
+nexa = { git = "https://github.com/RatikGambhir/graphdb" }                          # talk to a server
+# nexa = { git = "...", default-features = false, features = ["embedded"] }        # or run in-process
 ```
 
 ```rust
-use ratik::prelude::*;
+use nexa::prelude::*;
 
-fn main() -> ratik::Result<()> {
-    let db = Ratik::connect("http://127.0.0.1:7285")?;      // or Ratik::open("./data")? for embedded
+fn main() -> nexa::Result<()> {
+    let db = Nexa::connect("http://127.0.0.1:7285")?;      // or Nexa::open("./data")? for embedded
 
     // Schema, declared in Rust.
     db.define_all([
@@ -182,7 +182,7 @@ fn main() -> ratik::Result<()> {
     db.find("User").with("name", "Ada").update().increment("age", 1).run()?;
     db.find("User").filter(prop("age").lt(13)).delete()?;
 
-    // Any RQL, any time.
+    // Any NQL, any time.
     let rows = db.query("SELECT f.name FROM (u:User)-[:FOLLOWS]->(f) WHERE u.name = $who")
         .bind("who", "Ada")
         .fetch()?;
@@ -197,7 +197,7 @@ fn query_vector() -> Vec<f32> {
 }
 ```
 
-Every builder can show you what it will run: `.to_rql()` returns the generated RQL and its parameters. Values are
+Every builder can show you what it will run: `.to_nql()` returns the generated NQL and its parameters. Values are
 always sent as parameters, never pasted into query text.
 
 ## HTTP API
@@ -222,13 +222,13 @@ Errors are always `{"error": {"code", "message"}}`, with codes like `syntax_erro
 
 ```
 crates/
-  ratikdb/     the engine — embeddable, no async, no network
-    rql/       lexer → parser → AST
+  nexadb/     the engine — embeddable, no async, no network
+    nql/       lexer → parser → AST
     exec/      name resolution against the schema, planner, pattern matcher, SELECT pipeline, writes, DDL
     graph.rs   the on-disk store: nodes, edges, adjacency, B-tree and BM25 indexes as redb tables
     index/     BM25 scoring · HNSW vector index
-  ratik-sdk/   the `ratik` Rust crate (DSL + RQL, remote or embedded)
-  ratik-cli/   the `ratik` binary (axum server, web console, shell, process manager)
+  nexa-sdk/   the `nexa` Rust crate (DSL + NQL, remote or embedded)
+  nexa-cli/   the `nexa` binary (axum server, web console, shell, process manager)
 ```
 
 * **Storage.** Everything lives in [redb](https://www.redb.org), a pure-Rust embedded B-tree engine (the Rust
@@ -251,7 +251,7 @@ crates/
 
 ### Compared with HelixDB
 
-RatikDB is inspired by [HelixDB](https://github.com/HelixDB/helix-db) and shares its goal of one engine for graph,
+NexaDB is inspired by [HelixDB](https://github.com/HelixDB/helix-db) and shares its goal of one engine for graph,
 vector and text. It differs in a few deliberate ways:
 
 * **Runs as a plain binary.** Helix's local instance needs Docker or Podman.
@@ -264,7 +264,7 @@ vector and text. It differs in a few deliberate ways:
 ```sh
 cargo test --workspace --all-features       # engine, SDK (embedded) and server tests
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo run -p ratik-cli -- serve --memory    # hack on it with a throwaway database
+cargo run -p nexa-cli -- serve --memory    # hack on it with a throwaway database
 ```
 
 CI runs on macOS Apple Silicon, macOS Intel and Linux. Pushing a `v*` tag builds release binaries, including an ad-hoc
@@ -272,4 +272,4 @@ signed universal macOS binary.
 
 ---
 
-<div align="center"><sub>RatikDB · Graphs at the speed of thought.</sub></div>
+<div align="center"><sub>NexaDB · Graphs at the speed of thought.</sub></div>

@@ -1,4 +1,4 @@
-//! HTTP transport to a `ratik` server. Blocking calls, meant to run on the
+//! HTTP transport to a `nexa` server. Blocking calls, meant to run on the
 //! background executor; the app never talks to the network from the UI thread.
 
 use std::sync::Arc;
@@ -272,9 +272,9 @@ impl Client {
             .and_then(Value::as_str)
             .unwrap_or("?")
             .to_owned();
-        if json.get("name").and_then(Value::as_str) != Some("RatikDB") {
+        if json.get("name").and_then(Value::as_str) != Some("NexaDB") {
             return Err(ClientError::Decode(
-                "the endpoint answered, but it is not a RatikDB server".to_owned(),
+                "the endpoint answered, but it is not a NexaDB server".to_owned(),
             ));
         }
         Ok(Health {
@@ -283,10 +283,10 @@ impl Client {
         })
     }
 
-    /// Runs RQL with named parameters.
-    pub fn query(&self, rql: &str, params: &Map<String, Value>) -> Result<Executed, ClientError> {
+    /// Runs NQL with named parameters.
+    pub fn query(&self, nql: &str, params: &Map<String, Value>) -> Result<Executed, ClientError> {
         let started = Instant::now();
-        let body = json!({ "query": rql, "params": params });
+        let body = json!({ "query": nql, "params": params });
         let raw = self.request("POST", "/v1/query", Some(&body))?;
         let response: QueryResponse =
             serde_json::from_value(raw.clone()).map_err(|e| ClientError::Decode(e.to_string()))?;
@@ -325,8 +325,8 @@ fn truncate(text: &str, max: usize) -> String {
 
 /// The request body as the server sees it, pretty-printed.
 #[must_use]
-pub fn wire_request(rql: &str, params: &Map<String, Value>) -> String {
-    serde_json::to_string_pretty(&json!({ "query": rql, "params": params })).unwrap_or_default()
+pub fn wire_request(nql: &str, params: &Map<String, Value>) -> String {
+    serde_json::to_string_pretty(&json!({ "query": nql, "params": params })).unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -28,7 +28,7 @@ use crate::results::{
     ElementKind, EntityDetail, Execution, GraphBuilder, GraphData, build_execution, edge_detail,
     node_detail,
 };
-use crate::rql::{self, Analysis};
+use crate::nql::{self, Analysis};
 use crate::schema::Schema;
 use crate::settings::{self, Settings};
 use crate::theme::{self, Mode};
@@ -225,7 +225,7 @@ impl Atlas {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let saved = settings::load();
         let editor =
-            cx.new(|cx| TextField::new(TextFieldOptions::editor(), rql::GRAPH_SNAPSHOT, cx));
+            cx.new(|cx| TextField::new(TextFieldOptions::editor(), nql::GRAPH_SNAPSHOT, cx));
         cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
             TextFieldEvent::Changed => {
                 this.editor.update(cx, |e, _| e.error_line = None);
@@ -245,7 +245,7 @@ impl Atlas {
             GraphEvent::Expand(id) => {
                 let id = *id;
                 this.editor
-                    .update(cx, |e, cx| e.set_text(rql::neighbourhood_query(id), cx));
+                    .update(cx, |e, cx| e.set_text(nql::neighbourhood_query(id), cx));
                 this.view = View::Query;
                 this.pending_editor_focus = true;
                 cx.notify();
@@ -267,24 +267,24 @@ impl Atlas {
         .detach();
 
         // Launch options, useful for demos and screenshots:
-        // RATIK_ATLAS_SKIP_SPLASH=1, RATIK_ATLAS_VIEW=query|schema|graph,
-        // RATIK_ATLAS_URL=http://host:port (overrides the saved connection).
-        let skip_splash = std::env::var_os("RATIK_ATLAS_SKIP_SPLASH").is_some();
-        let start_view = match std::env::var("RATIK_ATLAS_VIEW").as_deref() {
+        // NEXA_ATLAS_SKIP_SPLASH=1, NEXA_ATLAS_VIEW=query|schema|graph,
+        // NEXA_ATLAS_URL=http://host:port (overrides the saved connection).
+        let skip_splash = std::env::var_os("NEXA_ATLAS_SKIP_SPLASH").is_some();
+        let start_view = match std::env::var("NEXA_ATLAS_VIEW").as_deref() {
             Ok("schema") => View::Schema,
             Ok("graph") => View::Graph,
             _ => View::Query,
         };
-        let connection = std::env::var("RATIK_ATLAS_URL")
+        let connection = std::env::var("NEXA_ATLAS_URL")
             .ok()
             .map(|url| ConnectionSettings {
                 url,
                 ..ConnectionSettings::default()
             })
             .or(saved.connection);
-        // RATIK_ATLAS_INSPECT=node:ID|edge:ID and RATIK_ATLAS_RUN=<RQL> act
+        // NEXA_ATLAS_INSPECT=node:ID|edge:ID and NEXA_ATLAS_RUN=<NQL> act
         // once after connecting (RUN skips the destructive-statement prompt).
-        let launch_inspect = std::env::var("RATIK_ATLAS_INSPECT").ok().and_then(|v| {
+        let launch_inspect = std::env::var("NEXA_ATLAS_INSPECT").ok().and_then(|v| {
             let (kind, id) = v.split_once(':')?;
             let kind = if kind == "edge" {
                 ElementKind::Edge
@@ -293,7 +293,7 @@ impl Atlas {
             };
             Some((kind, id.parse().ok()?))
         });
-        let launch_run = std::env::var("RATIK_ATLAS_RUN").ok();
+        let launch_run = std::env::var("NEXA_ATLAS_RUN").ok();
         let mut atlas = Self {
             focus_handle: cx.focus_handle(),
             splash: (!skip_splash).then_some(splash),
@@ -328,7 +328,7 @@ impl Atlas {
             graph: None,
             graph_loading: false,
             graph_error: None,
-            graph_source: (rql::GRAPH_SNAPSHOT.to_owned(), Map::new()),
+            graph_source: (nql::GRAPH_SNAPSHOT.to_owned(), Map::new()),
             graph_attempted: false,
             graph_id: 0,
             graph_view,
@@ -362,7 +362,7 @@ impl Atlas {
         self.graph_loading = false;
         self.graph_error = None;
         self.graph_attempted = false;
-        self.graph_source = (rql::GRAPH_SNAPSHOT.to_owned(), Map::new());
+        self.graph_source = (nql::GRAPH_SNAPSHOT.to_owned(), Map::new());
         self.set_graph(None, cx);
     }
 
@@ -444,7 +444,7 @@ impl Atlas {
             theme: Some(theme::theme(cx).mode.name().to_owned()),
         };
         if let Err(error) = settings::save(&settings) {
-            eprintln!("ratik-atlas: could not save settings: {error}");
+            eprintln!("nexa-atlas: could not save settings: {error}");
         }
     }
 
@@ -478,7 +478,7 @@ impl Atlas {
                                     health
                                         .map(|h| {
                                             format!(
-                                                "Reached RatikDB v{} in {:.0} ms.",
+                                                "Reached NexaDB v{} in {:.0} ms.",
                                                 h.version, h.duration_ms
                                             )
                                         })
@@ -561,7 +561,7 @@ impl Atlas {
         cx.notify();
     }
 
-    /// Converts the parameter rows to JSON values. RQL owns the typing; this
+    /// Converts the parameter rows to JSON values. NQL owns the typing; this
     /// only parses what the form says.
     fn param_values(&self, cx: &App) -> Result<Map<String, Value>, String> {
         let mut values = Map::new();
@@ -641,7 +641,7 @@ impl Atlas {
                 running: false,
                 result: None,
                 error: Some(RunError {
-                    message: "Connect to a RatikDB server before running a query.".to_owned(),
+                    message: "Connect to a NexaDB server before running a query.".to_owned(),
                     detail: None,
                 }),
             };
@@ -985,12 +985,12 @@ impl Atlas {
                     let none = Map::new();
                     match kind {
                         ElementKind::Node => {
-                            let node = client.query(&rql::node_query(id), &none)?;
-                            let edges = client.query(&rql::incident_edges_query(id, 50), &none)?;
+                            let node = client.query(&nql::node_query(id), &none)?;
+                            let edges = client.query(&nql::incident_edges_query(id, 50), &none)?;
                             Ok::<_, ClientError>(node_detail(&node.response, &edges.response))
                         }
                         ElementKind::Edge => {
-                            let edge = client.query(&rql::edge_query(id), &none)?;
+                            let edge = client.query(&nql::edge_query(id), &none)?;
                             Ok(edge_detail(&edge.response))
                         }
                     }
@@ -1022,7 +1022,7 @@ impl Atlas {
 
     /// Loads a neighbourhood query for a node into the editor.
     pub fn expand_node(&mut self, id: u64, cx: &mut Context<Self>) {
-        self.use_query(rql::neighbourhood_query(id), cx);
+        self.use_query(nql::neighbourhood_query(id), cx);
     }
 
     fn uptime(&self) -> u64 {
@@ -1045,7 +1045,7 @@ impl Render for Atlas {
 
 /// Applies the saved theme before the first frame.
 pub fn initial_mode() -> Mode {
-    let env = std::env::var("RATIK_ATLAS_THEME").ok();
+    let env = std::env::var("NEXA_ATLAS_THEME").ok();
     match env.as_deref().or(settings::load().theme.as_deref()) {
         Some("light") => Mode::Light,
         _ => Mode::Dark,

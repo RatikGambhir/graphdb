@@ -1,12 +1,12 @@
-# Ratik Atlas
+# Nexa Atlas
 
-A native desktop graph explorer for [RatikDB](../README.md), built in Rust with
+A native desktop graph explorer for [NexaDB](../README.md), built in Rust with
 [GPUI](https://gpui.rs), the GPU-accelerated UI framework behind Zed.
 
-Ratik Atlas is the RatikDB counterpart of [Helix Atlas](../../Database-Visualizers/helix-atlas). It keeps the
+Nexa Atlas is the NexaDB counterpart of [Helix Atlas](../../Database-Visualizers/helix-atlas). It keeps the
 same workbench (Query, Schema and Graph workspaces, an inspector, a connection
 sheet and the animated splash) and the same paper, graphite and copper design
-system. Under the hood it speaks **RQL**, RatikDB's SQL-with-graph-patterns
+system. Under the hood it speaks **NQL**, NexaDB's SQL-with-graph-patterns
 language, and it **writes**: inserts, updates and deletes run as explicit,
 atomic transactions.
 
@@ -14,9 +14,9 @@ atomic transactions.
 
 ## What it does
 
-- **Splash.** A valid RQL graph query types itself into an editor window while
+- **Splash.** A valid NQL graph query types itself into an editor window while
   the app starts.
-- **Query workspace.** An RQL editor with syntax highlighting, a line gutter and
+- **Query workspace.** An NQL editor with syntax highlighting, a line gutter and
   `⌘↵` to run. It also has typed `$parameters`, an output area with Results and
   Wire format tabs, and a sidebar with the schema, examples, stored queries and
   history.
@@ -41,7 +41,7 @@ Writes are enabled and always explicit:
 - Any `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` or `DROP` changes the run
   button to **Run mutation** and shows a banner. Nothing is written until you
   click it or press `⌘↵`.
-- A script that writes is sent as **one request**, which RatikDB runs as one
+- A script that writes is sent as **one request**, which NexaDB runs as one
   atomic transaction. If any statement fails, nothing is written.
 - `DELETE` and `DROP` ask for confirmation first.
 - After a commit, Atlas shows a receipt with the created, deleted and updated
@@ -56,11 +56,11 @@ Writes are enabled and always explicit:
 
 ## Running it
 
-You need Rust 1.89 or newer and a running RatikDB. The Metal shader toolchain is
+You need Rust 1.89 or newer and a running NexaDB. The Metal shader toolchain is
 not required, because shaders compile at runtime.
 
 ```bash
-cargo run --release --manifest-path ../Cargo.toml -p ratik-cli -- serve --memory
+cargo run --release --manifest-path ../Cargo.toml -p nexa-cli -- serve --memory
 ```
 
 ```bash
@@ -72,7 +72,7 @@ Open **Connection** and choose **Local** with `127.0.0.1` and port `7285`. Choos
 `--token`. The connection is verified before it is saved, and Atlas reconnects
 to it on the next launch.
 
-Settings are stored in `~/Library/Application Support/Ratik Atlas/settings.json`
+Settings are stored in `~/Library/Application Support/Nexa Atlas/settings.json`
 with `0600` permissions. A saved token is reused only for the same URL.
 
 ### Keyboard
@@ -91,12 +91,12 @@ These are meant for demos, screenshots and smoke tests.
 
 | Variable | Effect |
 |---|---|
-| `RATIK_ATLAS_URL` | connect to this server instead of the saved one |
-| `RATIK_ATLAS_VIEW` | start in `query`, `schema` or `graph` |
-| `RATIK_ATLAS_THEME` | `light` or `dark` |
-| `RATIK_ATLAS_SKIP_SPLASH` | skip the splash screen |
-| `RATIK_ATLAS_INSPECT` | inspect `node:ID` or `edge:ID` after connecting |
-| `RATIK_ATLAS_RUN` | run this RQL after connecting, without the delete prompt |
+| `NEXA_ATLAS_URL` | connect to this server instead of the saved one |
+| `NEXA_ATLAS_VIEW` | start in `query`, `schema` or `graph` |
+| `NEXA_ATLAS_THEME` | `light` or `dark` |
+| `NEXA_ATLAS_SKIP_SPLASH` | skip the splash screen |
+| `NEXA_ATLAS_INSPECT` | inspect `node:ID` or `edge:ID` after connecting |
+| `NEXA_ATLAS_RUN` | run this NQL after connecting, without the delete prompt |
 
 ## How it fits together
 
@@ -115,7 +115,7 @@ src/app/               the application entity and its workspaces
 src/graph/             force layout (Barnes–Hut), palette, the canvas
 src/ui/                buttons, the hand-drawn text editor, select, tooltip
 src/client.rs          blocking HTTP client, run on the background executor
-src/rql.rs             statement splitting, classification, highlighting
+src/nql.rs             statement splitting, classification, highlighting
 src/results.rs         view models: graphs from rows, receipts, details
 src/schema.rs          the /v1/schema catalog
 src/theme.rs           design tokens for both themes
@@ -125,9 +125,9 @@ One entity owns the session. Every request carries the connection generation
 and its own request id, so a reconnect or a newer request drops stale replies.
 Network calls run on GPUI's background executor and never block the UI thread.
 
-### How graphs are built from RQL
+### How graphs are built from NQL
 
-RatikDB returns nodes and edges as maps with `_id` and `_label` keys, and edges
+NexaDB returns nodes and edges as maps with `_id` and `_label` keys, and edges
 also carry `_from` and `_to`. Atlas collects every element in every row, including
 elements inside lists, and draws the nodes plus the edges among them. Edges whose
 endpoints were not returned are counted under the canvas instead of being dropped

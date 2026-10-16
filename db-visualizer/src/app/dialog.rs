@@ -161,7 +161,7 @@ impl ConnectionDialog {
             };
         let host = field(cx, "127.0.0.1", host, true, false);
         let port = field(cx, "7285", port, true, false);
-        let url = field(cx, "https://ratik.example.com", url, true, false);
+        let url = field(cx, "https://nexa.example.com", url, true, false);
         let token = field(
             cx,
             if has_token {
@@ -421,7 +421,7 @@ impl Render for ConnectionDialog {
                         .line_height(px(16.))
                         .text_color(t.ink_muted)
                         .child(
-                            "`ratik serve` and `ratik start` listen on 127.0.0.1:7285 by default.",
+                            "`nexa serve` and `nexa start` listen on 127.0.0.1:7285 by default.",
                         ),
                 );
         } else {
@@ -564,7 +564,7 @@ impl Render for ConnectionDialog {
                                     .text_size(px(12.))
                                     .text_color(t.ink_muted)
                                     .child(
-                                        "Connect to RatikDB on this machine or on a remote server.",
+                                        "Connect to NexaDB on this machine or on a remote server.",
                                     ),
                             ),
                     )
@@ -673,8 +673,8 @@ mod tests {
         assert_eq!(local_url("localhost", "7285"), "http://127.0.0.1:7285");
         assert_eq!(local_url("::1", "7285"), "http://[::1]:7285");
         assert_eq!(
-            normalize_remote("db.example.com/ratik/"),
-            "https://db.example.com/ratik"
+            normalize_remote("db.example.com/nexa/"),
+            "https://db.example.com/nexa"
         );
         assert_eq!(
             split_local("http://127.0.0.1:7285"),

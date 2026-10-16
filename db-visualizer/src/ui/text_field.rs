@@ -1,9 +1,9 @@
 //! A text field drawn by hand: the single-line inputs of the connection dialog
-//! and the multi-line RQL editor share one implementation.
+//! and the multi-line NQL editor share one implementation.
 //!
 //! GPUI ships no editor widget. This one keeps selection, undo-free editing,
 //! IME composition and keyboard navigation close to what a native text view
-//! does, while painting an RQL highlighter and a line-number gutter when asked.
+//! does, while painting an NQL highlighter and a line-number gutter when asked.
 
 use std::ops::Range;
 
@@ -17,7 +17,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::rql::{TokenKind, highlight_line};
+use crate::nql::{TokenKind, highlight_line};
 use crate::theme::{FONT_MONO, FONT_UI, Theme, theme};
 
 actions!(
@@ -155,12 +155,12 @@ impl TextFieldOptions {
         }
     }
 
-    /// The RQL editor.
+    /// The NQL editor.
     #[must_use]
     pub fn editor() -> Self {
         Self {
             multiline: true,
-            placeholder: "Type an RQL query…".into(),
+            placeholder: "Type an NQL query…".into(),
             mono: true,
             highlight: true,
             gutter: true,

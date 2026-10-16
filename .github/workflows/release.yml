@@ -30,10 +30,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: |
-          cargo build --release --locked -p ratik-cli
+          cargo build --release --locked -p nexa-cli
           mkdir -p dist
-          tar -C target/release -czf dist/ratik-x86_64-linux.tar.gz ratik
-          (cd dist && shasum -a 256 ratik-x86_64-linux.tar.gz > ratik-x86_64-linux.tar.gz.sha256)
+          tar -C target/release -czf dist/nexa-x86_64-linux.tar.gz nexa
+          (cd dist && shasum -a 256 nexa-x86_64-linux.tar.gz > nexa-x86_64-linux.tar.gz.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: linux

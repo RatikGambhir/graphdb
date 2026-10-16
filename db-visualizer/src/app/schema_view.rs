@@ -7,7 +7,7 @@ use gpui::{
 
 use super::shell::{display_heading, workspace_eyebrow};
 use super::{Atlas, SchemaCategory};
-use crate::rql;
+use crate::nql;
 use crate::schema::{Schema, TypeInfo};
 use crate::theme::{FONT_MONO, theme, transparent};
 use crate::ui::{Button, ButtonKind, format_count, hint, icon, spinner};
@@ -242,7 +242,7 @@ impl Atlas {
             page_state(
                 "circle-dot",
                 "Connect to inspect your schema",
-                "Choose a local or remote RatikDB server to read its declared node and edge types."
+                "Choose a local or remote NexaDB server to read its declared node and edge types."
                     .to_owned(),
                 Some(("Connect Now", false)),
                 false,
@@ -317,9 +317,9 @@ impl Atlas {
                     empty = false;
                     let query = format!(
                         "-- Nearest neighbours by {key}; bind $vector in Parameters as JSON\nSELECT x, similarity(x.{}, $vector) AS score\nFROM (x:{})\nORDER BY similarity(x.{}, $vector) DESC\nLIMIT 10",
-                        rql::ident(&property.name),
-                        rql::ident(&owner.name),
-                        rql::ident(&property.name)
+                        nql::ident(&property.name),
+                        nql::ident(&owner.name),
+                        nql::ident(&property.name)
                     );
                     list = list.child(simple_card(
                         &key,
@@ -354,7 +354,7 @@ impl Atlas {
                             if q.params.len() == 1 { "" } else { "s" }
                         ),
                         vec![("Signature", q.signature()), ("Body", q.body.clone())],
-                        rql::call_query(&q.name, &params),
+                        nql::call_query(&q.name, &params),
                         "Open CALL in Query",
                         &mut self.schema_expanded,
                         cx,
@@ -484,14 +484,14 @@ impl Atlas {
             .child(summary);
         if expanded {
             let browse = if is_node {
-                rql::browse_node_type(&entry.name)
+                nql::browse_node_type(&entry.name)
             } else {
-                rql::browse_edge_type(&entry.name)
+                nql::browse_edge_type(&entry.name)
             };
             let graph = if is_node {
-                rql::graph_node_type(&entry.name)
+                nql::graph_node_type(&entry.name)
             } else {
-                rql::graph_edge_type(&entry.name)
+                nql::graph_edge_type(&entry.name)
             };
             let insert = if is_node {
                 let cols: Vec<&str> = entry
@@ -502,9 +502,9 @@ impl Atlas {
                     .collect();
                 format!(
                     "INSERT INTO {} ({})\nVALUES ({})\nRETURNING *;",
-                    rql::ident(&entry.name),
+                    nql::ident(&entry.name),
                     cols.iter()
-                        .map(|c| rql::ident(c))
+                        .map(|c| nql::ident(c))
                         .collect::<Vec<_>>()
                         .join(", "),
                     cols.iter().map(|_| "NULL").collect::<Vec<_>>().join(", ")
@@ -512,9 +512,9 @@ impl Atlas {
             } else {
                 format!(
                     "INSERT (a)-[:{} {{}}]->(b)\nFROM (a:{}), (b:{})\nWHERE id(a) = $from AND id(b) = $to\nRETURNING a, b;",
-                    rql::ident(&entry.name),
-                    rql::ident(entry.from.first().map_or("Node", String::as_str)),
-                    rql::ident(entry.to.first().map_or("Node", String::as_str))
+                    nql::ident(&entry.name),
+                    nql::ident(entry.from.first().map_or("Node", String::as_str)),
+                    nql::ident(entry.to.first().map_or("Node", String::as_str))
                 )
             };
             let meta = |label: &'static str, value: String| {

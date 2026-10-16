@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ratikdb", "crates/ratik-sdk", "crates/ratik-cli"]
+members = ["crates/nexadb", "crates/nexa-sdk", "crates/nexa-cli"]
 resolver = "3"
 # The desktop visualizer builds GPUI, so it stays out of the engine's workspace
 # build and CI; build it from its own directory.
@@ -13,8 +13,8 @@ repository = "https://github.com/RatikGambhir/graphdb"
 rust-version = "1.89"
 
 [workspace.dependencies]
-ratikdb = { path = "crates/ratikdb", version = "0.1.0" }
-ratik = { path = "crates/ratik-sdk", version = "0.1.0", default-features = false }
+nexadb = { path = "crates/nexadb", version = "0.1.0" }
+nexa = { path = "crates/nexa-sdk", version = "0.1.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

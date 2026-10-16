@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashSet};
 use serde_json::{Map, Value};
 
 use crate::client::{Executed, QueryResponse, Stats};
-use crate::rql::Analysis;
+use crate::nql::Analysis;
 
 /// A node as the server serialises it: `{"_id", "_label", ...properties}`.
 #[derive(Clone, Debug, PartialEq)]

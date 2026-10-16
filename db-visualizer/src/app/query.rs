@@ -1,4 +1,4 @@
-//! The Query workspace: schema and examples rail, RQL editor, typed
+//! The Query workspace: schema and examples rail, NQL editor, typed
 //! parameters, output tabs (results and wire format) and the inspector.
 
 use gpui::{
@@ -8,7 +8,7 @@ use gpui::{
 
 use super::shell::workspace_eyebrow;
 use super::{Atlas, OutputTab, Status};
-use crate::rql::{self, Analysis};
+use crate::nql::{self, Analysis};
 use crate::theme::{FONT_MONO, theme, transparent};
 use crate::ui::{
     Button, ButtonKind, divider, format_count, hint, icon, kbd, panel_error, section_heading,
@@ -123,14 +123,14 @@ impl Atlas {
                 }
                 for (name, count, is_node) in entries {
                     let primary = if is_node {
-                        rql::graph_node_type(&name)
+                        nql::graph_node_type(&name)
                     } else {
-                        rql::browse_edge_type(&name)
+                        nql::browse_edge_type(&name)
                     };
                     let secondary = if is_node {
-                        rql::browse_node_type(&name)
+                        nql::browse_node_type(&name)
                     } else {
-                        rql::graph_edge_type(&name)
+                        nql::graph_edge_type(&name)
                     };
                     schema_section = schema_section.child(
                         div()
@@ -194,7 +194,7 @@ impl Atlas {
                     schema_section = schema_section.child(link(
                         SharedString::from(format!("stored-{}", q.name)),
                         SharedString::from(q.signature()),
-                        rql::call_query(&q.name, &params),
+                        nql::call_query(&q.name, &params),
                         cx,
                     ));
                 }
@@ -218,7 +218,7 @@ impl Atlas {
             .flex_col()
             .gap(px(2.))
             .child(div().mb(px(11.)).child(section_heading("Examples", cx)));
-        for (index, example) in rql::EXAMPLES.iter().enumerate() {
+        for (index, example) in nql::EXAMPLES.iter().enumerate() {
             examples = examples.child(link(
                 SharedString::from(format!("example-{index}")),
                 example.title.into(),
@@ -283,7 +283,7 @@ impl Atlas {
             "Run query"
         };
         let tooltip = if !self.status.is_connected() {
-            "Connect to a RatikDB server to run queries"
+            "Connect to a NexaDB server to run queries"
         } else if is_write {
             "Writes run as one atomic transaction"
         } else {
@@ -314,7 +314,7 @@ impl Atlas {
                             .flex()
                             .flex_col()
                             .gap(px(5.))
-                            .child(workspace_eyebrow("WORKSPACE / RQL", cx))
+                            .child(workspace_eyebrow("WORKSPACE / NQL", cx))
                             .child(
                                 div()
                                     .text_size(px(18.))
@@ -370,7 +370,7 @@ impl Atlas {
                     .font_family(FONT_MONO)
                     .text_size(px(9.))
                     .text_color(t.ink_muted)
-                    .child("RQL")
+                    .child("NQL")
                     .child(SharedString::from(format!(
                         "{line_count} {} · {} · {}",
                         if line_count == 1 { "line" } else { "lines" },
@@ -645,9 +645,9 @@ impl Atlas {
                     .child(if connected {
                         "Run the query above to reveal your data. Try a starting point from the left rail if you need one."
                     } else if checking {
-                        "Reaching the saved RatikDB server…"
+                        "Reaching the saved NexaDB server…"
                     } else {
-                        "Connect to a local or remote RatikDB server, then explore its shape with a query."
+                        "Connect to a local or remote NexaDB server, then explore its shape with a query."
                     }),
             )
             .when(!connected && !checking, |d| {

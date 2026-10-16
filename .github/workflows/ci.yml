@@ -30,10 +30,10 @@ jobs:
       - run: cargo test --workspace --all-features
       - name: Smoke-test the binary
         run: |
-          cargo build --release -p ratik-cli
-          export RATIK_DATA="$RUNNER_TEMP/ratik" RATIK_PORT=7399
-          ./target/release/ratik init "$RUNNER_TEMP"
-          ./target/release/ratik start --apply "$RUNNER_TEMP/schema.rql"
-          ./target/release/ratik status
-          ./target/release/ratik query "SHOW NODES"
-          ./target/release/ratik stop
+          cargo build --release -p nexa-cli
+          export NEXA_DATA="$RUNNER_TEMP/nexa" NEXA_PORT=7399
+          ./target/release/nexa init "$RUNNER_TEMP"
+          ./target/release/nexa start --apply "$RUNNER_TEMP/schema.nql"
+          ./target/release/nexa status
+          ./target/release/nexa query "SHOW NODES"
+          ./target/release/nexa stop

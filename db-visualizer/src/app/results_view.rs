@@ -545,7 +545,7 @@ impl Atlas {
                 .text_color(t.ink_secondary)
                 .child(SharedString::from(text))
         };
-        let analysis = crate::rql::Analysis::of(&source);
+        let analysis = crate::nql::Analysis::of(&source);
         let mode = if analysis.has_write() {
             "one atomic write transaction"
         } else if analysis.statements.len() > 1 {

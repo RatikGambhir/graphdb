@@ -7,13 +7,13 @@ use serde_json::Value;
 use super::Atlas;
 use super::shell::display_heading;
 use crate::results::{ElementKind, EntityDetail, stringify};
-use crate::rql::ident;
+use crate::nql::ident;
 use crate::theme::{FONT_MONO, theme};
 use crate::ui::{Button, ButtonKind, count_badge, hint, icon, panel_error, section_heading};
 
-/// An RQL literal for a JSON value.
+/// An NQL literal for a JSON value.
 #[must_use]
-pub fn rql_literal(value: &Value) -> String {
+pub fn nql_literal(value: &Value) -> String {
     match value {
         Value::Null => "NULL".to_owned(),
         Value::Bool(b) => b.to_string(),
@@ -21,12 +21,12 @@ pub fn rql_literal(value: &Value) -> String {
         Value::String(s) => format!("'{}'", s.replace('\'', "''")),
         Value::Array(items) => format!(
             "[{}]",
-            items.iter().map(rql_literal).collect::<Vec<_>>().join(", ")
+            items.iter().map(nql_literal).collect::<Vec<_>>().join(", ")
         ),
         Value::Object(map) => format!(
             "{{{}}}",
             map.iter()
-                .map(|(k, v)| format!("{}: {}", ident(k), rql_literal(v)))
+                .map(|(k, v)| format!("{}: {}", ident(k), nql_literal(v)))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -45,7 +45,7 @@ pub fn update_template(detail: &EntityDetail) -> String {
         .properties
         .iter()
         .filter(|(_, v)| !matches!(v, Value::Array(items) if items.len() > 16))
-        .map(|(k, v)| format!("  {var}.{} = {}", ident(k), rql_literal(v)))
+        .map(|(k, v)| format!("  {var}.{} = {}", ident(k), nql_literal(v)))
         .collect();
     let set = if assignments.is_empty() {
         format!("  {var}.property = 'value'  -- declare the property in the schema first")
@@ -484,8 +484,8 @@ mod tests {
 
     #[test]
     fn literals_escape_quotes() {
-        assert_eq!(rql_literal(&Value::from("O'Hara")), "'O''Hara'");
-        assert_eq!(rql_literal(&serde_json::json!([1, "a"])), "[1, 'a']");
+        assert_eq!(nql_literal(&Value::from("O'Hara")), "'O''Hara'");
+        assert_eq!(nql_literal(&serde_json::json!([1, "a"])), "[1, 'a']");
     }
 
     #[test]
