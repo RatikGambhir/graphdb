@@ -6,3 +6,8 @@ LOCK
 .DS_Store
 node_modules/
 __pycache__/
+
+# Agent skills are installed per user (npx skills add -g ...), not in the project
+/.agents/
+/.claude/skills/
+skills-lock.json

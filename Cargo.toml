@@ -1,6 +1,5 @@
 [workspace]
 members = ["crates/ratikdb", "crates/ratik-sdk", "crates/ratik-cli"]
-exclude = [".agents"]
 resolver = "3"
 
 [workspace.package]
