@@ -271,20 +271,33 @@ pub(crate) fn update(txn: &mut Txn<'_>, params: &Params, up: &Update, now: i64) 
         rows.push(row.to_vec());
         Ok(true)
     })?;
+    // Like SQL, each element is updated at most once even when the pattern
+    // reaches it through several paths; RETURNING lists it once too.
     let mut ops = Vec::new();
-    for row in &rows {
-        let env = Env::new(g, row, now);
+    let mut touched: BTreeSet<(ElementId, usize)> = BTreeSet::new();
+    let mut kept = Vec::with_capacity(rows.len());
+    for row in rows {
+        let env = Env::new(g, &row, now);
+        let mut fresh = sets.is_empty();
         for (var, prop, e) in &sets {
             let (Value::Node(id) | Value::Edge(id)) = row[*var] else { continue };
             let def = g.type_of(id).and_then(|t| g.schema.get(t)).ok_or_else(|| Error::NotFound(format!("element {id}")))?;
             let (slot, p) = def.prop(prop)?;
+            if !touched.insert((id, slot)) {
+                continue;
+            }
+            fresh = true;
             let value = p.ty.coerce(eval(e, &env)?, &format!("{}.{prop}", def.name))?;
             if p.not_null && value.is_null() {
                 return Err(Error::constraint(format!("{}.{prop} is NOT NULL", def.name)));
             }
             ops.push(Op::SetProp { id, slot, value });
         }
+        if fresh {
+            kept.push(row);
+        }
     }
+    let rows = kept;
     for op in ops {
         txn.apply(op)?;
     }

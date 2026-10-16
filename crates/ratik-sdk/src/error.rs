@@ -2,7 +2,7 @@
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Errors returned by the SDK.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// The database rejected the query (syntax, schema, type, constraint...).
